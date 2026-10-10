@@ -91,6 +91,7 @@ describe('appendTaskLine', () => {
 		const store = { ...files };
 		const folders = new Set<string>();
 		const vault = {
+		getMarkdownFiles: () => Object.keys(store).map(path => new TFile(path)),
 			getAbstractFileByPath: (path: string) =>
 				path in store ? new TFile(path) : (folders.has(path) ? { path } : null),
 			read: vi.fn(async (file: { path: string }) => store[file.path] ?? ''),
@@ -141,6 +142,7 @@ describe('commitTask', () => {
 		return {
 			workspace: { getActiveFile: () => (activePath ? { path: activePath } : null) },
 			vault: {
+				getMarkdownFiles: () => Object.keys(store).map(path => new TFile(path)),
 				getAbstractFileByPath: (path: string) => (path in store ? new TFile(path) : null),
 				read: vi.fn(async (file: { path: string }) => store[file.path] ?? ''),
 				modify: vi.fn(async (file: { path: string }, content: string) => { store[file.path] = content; }),
@@ -175,4 +177,12 @@ describe('commitTask', () => {
 		const app = makeApp({}, null);
 		expect(await commitTask(app as never, settings({ quickAddTarget: 'active' }), 'Do it')).toBe('no-target');
 	});
+	it('serializes quick adds and counts the first addition before metadata refresh', async () => {
+		const app = makeApp({ 'Inbox.md': '' }, null);
+		const options = settings({ quickAddInbox: 'Inbox.md', focusTargetCount: 1 });
+		const results = await Promise.all([commitTask(app as never, options, 'A', ['#focus']), commitTask(app as never, options, 'B', ['#focus'])]);
+		expect(results).toEqual(['added', 'focus-full']);
+		expect(app.vault._store['Inbox.md']).toBe('- [ ] A #focus\n');
+	});
+
 });

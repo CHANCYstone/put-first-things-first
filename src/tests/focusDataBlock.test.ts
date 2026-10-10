@@ -87,6 +87,7 @@ function makeTask(overrides: Partial<TaskItem> = {}): TaskItem {
 		lineNumber: 0,
 		completed: false,
 		tags: [],
+		progress: [],
 		...overrides,
 	};
 }

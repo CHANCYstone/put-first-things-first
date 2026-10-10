@@ -7,6 +7,8 @@
  * ```tasks``` query.
  */
 
+import { unlinkText } from './homeNote';
+
 // Priority signifiers, highest to lowest.
 const PRIORITY_RE = /[🔺⏫🔼🔽⏬]/u;
 // Date signifiers with their ISO value: created, start, scheduled, due, cancelled, done.
@@ -73,9 +75,27 @@ const TASK_LINE_RE = /^(\s*[-*+]\s+\[.\]\s*)(.*)$/u;
  * and grouping under "+" instead of "F".
  */
 export const TASK_PREFIX_RE = /^\s*[-*+]\s*\[.\]\s*/u;
+
+/**
+ * Strips a raw task line down to its display title: removes the checkbox marker,
+ * priority signifiers, dated signifiers, and tags, and shows wikilinks as their
+ * text. Used both for rendering and as the stable per-task key for the manual
+ * focus order (file path + title).
+ */
+export function taskTitle(line: string): string {
+	return unlinkText(line)
+		.replace(TASK_PREFIX_RE, '')
+		.replace(/\s+\^[a-zA-Z0-9-]+(?=\s|$)/g, '')
+		.replace(/(🔺|⏫|🔼|🔽|⏬)\s*/g, '')
+		// Strip all date signifiers (due, start, scheduled, created, cancelled,
+		// done) with their dates so the title stays clean — they show in the popover.
+		.replace(/[📅🛫⏳➕❌✅]\s*\d{4}-\d{2}-\d{2}/gu, '')
+		.replace(/#\S+/g, '')
+		.replace(/\s{2,}/g, ' ')
+		.trim();
+}
 // A due date token and its ISO value.
 const DUE_RE = /📅\s*(\d{4}-\d{2}-\d{2})/u;
-const START_RE = /🛫\s*(\d{4}-\d{2}-\d{2})/u;
 // The first metadata signifier a priority sorts before (recurrence or any date).
 const FIRST_META_RE = /🔁|[➕🛫⏳📅❌✅]/u;
 
@@ -103,27 +123,10 @@ export function setDueDate(line: string, iso: string): string {
 	return `${line.replace(/[ \t]+$/, '')} 📅 ${iso}`;
 }
 
-/**
- * Sets the start date (🛫) on a task line to `iso`, replacing an existing start
- * date or appending one. Used by "hide until" to give a hidden task a return
- * date. Indentation and other tokens are preserved; non-task lines are unchanged.
- */
-export function setStartDate(line: string, iso: string): string {
-	if (!TASK_LINE_RE.test(line)) return line;
-	if (START_RE.test(line)) {
-		return line.replace(START_RE, `🛫 ${iso}`);
-	}
-	return `${line.replace(/[ \t]+$/, '')} 🛫 ${iso}`;
-}
-
-/**
- * Shifts an existing due date (📅) by `days`. If the line has no due date it is
- * returned unchanged (callers use setDueDate for the "no date yet" case).
- */
-export function shiftDueDate(line: string, days: number): string {
-	const match = DUE_RE.exec(line);
-	if (!match?.[1]) return line;
-	return line.replace(DUE_RE, `📅 ${addDaysToIso(match[1], days)}`);
+/** Removes the due date (📅 and its date) from a task line, closing the gap it leaves. */
+export function clearDueDate(line: string): string {
+	if (!DUE_RE.test(line)) return line;
+	return line.replace(/\s*📅\s*\d{4}-\d{2}-\d{2}/u, '').replace(/\s{2,}/g, ' ').replace(/[ \t]+$/, '');
 }
 
 /**

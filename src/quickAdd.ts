@@ -1,12 +1,13 @@
+import { boardTransaction, countFocusTasks, focusCapacity } from './workBoard';
 /**
  * Pure helpers plus the vault append behind the quick-add dialog (issue #8):
  * turning the typed input into a task line, resolving where it should go, and
  * appending it to that note (creating the note and its folder if needed).
  */
-import { App, TFile } from 'obsidian';
+import { App, TFile, Notice } from 'obsidian';
 import { FocusFirstSettings } from './settings';
 
-export type QuickAddResult = 'added' | 'empty' | 'no-target';
+export type QuickAddResult = 'added' | 'empty' | 'no-target' | 'focus-full';
 
 /**
  * Builds a `- [ ] …` task line from the raw input, appending any quick-modifier
@@ -92,6 +93,14 @@ export async function commitTask(
 	const activePath = app.workspace.getActiveFile()?.path ?? null;
 	const target = resolveTargetPath(settings, activePath);
 	if (!target) return 'no-target';
-	await appendTaskLine(app, target, buildTaskLine(rawText, tags));
-	return 'added';
+	return boardTransaction(app, async () => {
+		const line = buildTaskLine(rawText, tags);
+		const focused = !!settings.focusTag.trim() && line.split(/\s+/).some(tag => tag.toLowerCase() === settings.focusTag.trim().toLowerCase());
+		if (focused && await countFocusTasks(app, settings) >= focusCapacity(settings.focusTargetCount)) {
+			new Notice('Focus 容量已满，请先将一项移到其他区域。');
+			return 'focus-full';
+		}
+		await appendTaskLine(app, target, line);
+		return 'added';
+	});
 }

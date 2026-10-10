@@ -1,4 +1,4 @@
-/* Focus First v1.6.13 */
+/* Put First Things First v0.7.0 */
 /* ── Tasks-plugin warning ───────────────────────────────── */
 
 .focus-first-warning {
@@ -60,6 +60,12 @@
 /* ── Header ─────────────────────────────────────────────── */
 
 .focus-first-header {
+	/* Stays at the top while the page scrolls, so the axis switch, search, and
+	   add button are always within reach. */
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	background: var(--background-primary);
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -293,7 +299,10 @@
 	display: flex;
 	flex-direction: column;
 	height: 100%;
-	overflow: hidden;
+	/* One page, one scrollbar: the focus list and the matrix scroll together,
+	   like a sheet of paper, instead of a pinned top half over a scrolling
+	   bottom half. Only the header stays put (sticky, below). */
+	overflow-y: auto;
 	/* Positioning context for the hover detail popover (appended here so it isn't
 	   clipped by the scrolling quadrants). */
 	position: relative;
@@ -345,21 +354,12 @@
 	border-radius: var(--radius-s);
 }
 
-/* Future tasks (start/scheduled date ahead) in "dim" mode — de-emphasised but
-   still readable and interactive on hover. */
-.focus-first-task-item.is-future .focus-first-task-text {
-	opacity: 0.5;
-}
-
-.focus-first-task-item.is-future:hover .focus-first-task-text {
-	opacity: 0.75;
-}
-
 /* ── Matrix container ────────────────────────────────────── */
 
 .focus-first-matrix-container {
-	flex: 1;
-	overflow: hidden;
+	/* Sized to its content; the view itself is the scroll surface. */
+	flex: 0 0 auto;
+	overflow: visible;
 	padding: var(--size-4-3);
 	box-sizing: border-box;
 	/* Establish a size container so the matrix can react to the view's own width
@@ -373,10 +373,13 @@
 .focus-first-matrix {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
-	grid-template-rows: 1fr 1fr;
+	/* Rows grow with their content — never squeeze a quadrant so its list has to
+	   scroll inside a small box. The matrix container scrolls as a whole; an
+	   empty or short quadrant keeps a modest minimum so the grid still reads as
+	   four cells. */
+	grid-auto-rows: minmax(9rem, max-content);
 	gap: var(--size-4-4);
-	height: 100%;
-	overflow: hidden;
+	overflow: visible;
 }
 
 /* Issue #12: in a narrow view (phone, or a narrow desktop sidebar) the 2×2 grid
@@ -397,6 +400,52 @@
 .focus-first-quadrant {
 	display: flex;
 	flex-direction: column;
+}
+
+/* ── "Add here" at the foot of a quadrant ────────────────── */
+/* A ghost row: faint until the pointer is over the quadrant, so the four cells
+   stay calm but adding a task where it belongs is always one click away. */
+.focus-first-quadrant-add {
+	padding: 0 var(--size-4-2) var(--size-4-2);
+}
+
+.focus-first-quadrant-add-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	width: 100%;
+	justify-content: flex-start;
+	background: none;
+	box-shadow: none;
+	border: none;
+	padding: var(--size-2-2) var(--size-2-3);
+	color: var(--text-faint);
+	font-size: calc(var(--font-ui-small) * var(--focus-first-font-scale));
+	cursor: pointer;
+}
+
+.focus-first-quadrant:hover .focus-first-quadrant-add-btn,
+.focus-first-quadrant-add-btn:focus-visible {
+	color: var(--text-muted);
+}
+
+.focus-first-quadrant-add-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.focus-first-quadrant-add-icon {
+	display: inline-flex;
+}
+
+.focus-first-quadrant-add-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.focus-first-quadrant-add-input {
+	width: 100%;
+	font-size: calc(var(--font-ui-small) * var(--focus-first-font-scale));
 }
 
 /* ── Section headings (native .setting-item-heading markup) ─── */
@@ -467,21 +516,272 @@
 	/* No top padding — the heading already supplies the gap above the first
 	   row, so we don't stack two paddings between title and list. */
 	padding: 0 0 var(--size-4-2);
-	overflow-y: auto;
+	overflow: visible;
 	flex: 1;
+}
+
+/* A list longer than the configured number of rows is capped at their measured
+   height (see capListHeight) and scrolls inside itself; the page around it
+   still scrolls as a whole. */
+.focus-first-task-list.is-capped {
+	max-height: var(--ff-list-max-height);
+	overflow-y: auto;
+	padding-bottom: 0;
+	/* A thin fade at the bottom edge hints that there is more below. */
+	mask-image: linear-gradient(to bottom, black calc(100% - 14px), transparent);
 }
 
 .focus-first-task-item {
 	position: relative;
 	display: flex;
+	/* The latest-note line (below) takes a full row under the title. */
+	flex-wrap: wrap;
 	align-items: flex-start;
-	gap: var(--size-2-2);
+	gap: var(--size-2-1) var(--size-2-2);
 	padding: var(--size-2-3) var(--size-4-4);
+}
+
+/* ── Home-note link on the card ──────────────────────────── */
+/* A small door straight to the task's own note; the card itself opens the page. */
+.focus-first-task-home {
+	display: inline-flex;
+	flex-shrink: 0;
+	align-self: center;
+	color: var(--text-faint);
+	cursor: pointer;
+}
+
+.focus-first-task-home:hover {
+	color: var(--text-accent);
+}
+
+.focus-first-task-home svg {
+	width: 13px;
+	height: 13px;
+}
+
+/* ── Latest progress note on the card ────────────────────── */
+/* The card's second line: what happened last. Muted by default; an alert (⚠)
+   reads red, a note older than the stale threshold reads amber. The date is
+   short (MM-DD) — the full date and age are in the tooltip and on the page. */
+.focus-first-task-latest {
+	flex-basis: 100%;
+	display: flex;
+	align-items: baseline;
+	gap: var(--size-2-2);
+	min-width: 0;
+	font-size: calc(var(--font-ui-smaller) * var(--focus-first-font-scale));
+	line-height: 1.3;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.focus-first-task-latest-icon {
+	display: inline-flex;
+	flex-shrink: 0;
+	align-self: center;
+	opacity: 0.6;
+}
+
+.focus-first-task-latest-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+.focus-first-task-latest-date {
+	flex-shrink: 0;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-faint);
+}
+
+.focus-first-task-latest-text {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.focus-first-task-latest:hover .focus-first-task-latest-text {
+	color: var(--text-normal);
+}
+
+.focus-first-task-latest.is-stale {
+	color: var(--color-orange);
+}
+
+.focus-first-task-latest.is-stale .focus-first-task-latest-date {
+	color: var(--color-orange);
+	opacity: 0.8;
+}
+
+.focus-first-task-latest.is-alert,
+.focus-first-task-latest.is-alert .focus-first-task-latest-date {
+	color: var(--color-red);
+}
+
+.focus-first-task-latest.is-alert .focus-first-task-latest-icon {
+	opacity: 1;
+}
+
+/* ── Progress page (modal) ───────────────────────────────── */
+
+.focus-first-progress-meta {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	margin-bottom: var(--size-4-3);
+}
+
+.focus-first-progress-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	padding-bottom: var(--size-2-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.focus-first-progress-title {
+	font-weight: var(--font-semibold);
+}
+
+.focus-first-progress-status {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+}
+
+.focus-first-progress-status.is-stale {
+	color: var(--color-orange);
+}
+
+.focus-first-progress-list {
+	max-height: 40vh;
+	overflow-y: auto;
+	margin: var(--size-2-2) 0 var(--size-4-3);
+}
+
+.focus-first-progress-empty {
+	padding: var(--size-4-3) 0;
+	color: var(--text-faint);
+	font-size: var(--font-ui-small);
+}
+
+/* One entry per row: date in a fixed column, text flowing beside it. Clicking a
+   row jumps to that line in the note. */
+.focus-first-progress-entry {
+	display: grid;
+	grid-template-columns: 6.5em auto 1fr;
+	align-items: baseline;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-2-1);
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
+
+.focus-first-progress-entry:hover {
+	background: var(--background-modifier-hover);
+}
+
+.focus-first-progress-date {
+	grid-column: 1;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+.focus-first-progress-mark {
+	grid-column: 2;
+	display: inline-flex;
+	align-self: center;
+	color: var(--color-red);
+}
+
+.focus-first-progress-mark svg {
+	width: 14px;
+	height: 14px;
+}
+
+.focus-first-progress-text {
+	grid-column: 3;
+	color: var(--text-normal);
+	overflow-wrap: anywhere;
+}
+
+.focus-first-progress-entry.is-alert .focus-first-progress-text {
+	color: var(--color-red);
+}
+
+.focus-first-progress-composer {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.focus-first-progress-input {
+	flex: 1;
+	min-width: 0;
+}
+
+.focus-first-progress-alert-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+}
+
+.focus-first-progress-alert-btn.is-active {
+	color: var(--color-red);
+	background: color-mix(in srgb, var(--color-red) 15%, transparent);
+}
+
+.focus-first-duedate-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-3);
+}
+
+.focus-first-duedate-input {
+	flex: 1;
+}
+
+.focus-first-progress-footer {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-3);
+}
+
+.focus-first-progress-footer-left,
+.focus-first-progress-footer-right {
+	display: flex;
+	gap: var(--size-2-2);
+}
+
+.focus-first-progress-promote,
+.focus-first-progress-archive {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	color: var(--text-muted);
+}
+
+.focus-first-progress-btn-icon {
+	display: inline-flex;
+}
+
+.focus-first-progress-btn-icon svg {
+	width: 14px;
+	height: 14px;
 }
 
 .focus-first-task-item:hover {
 	background: var(--background-modifier-hover);
 	border-radius: var(--radius-s);
+}
+
+/* The whole card opens the task's page on desktop, so it reads as clickable. */
+body:not(.is-mobile) .focus-first-task-item {
+	cursor: pointer;
 }
 
 .focus-first-task-text {
@@ -571,9 +871,37 @@
 .focus-first-task-actions {
 	display: flex;
 	gap: var(--size-4-2);
+}
+
+/* Inside the (mobile) detail block the strip is a row of its own. */
+.focus-first-task-detail .focus-first-task-actions {
 	margin-bottom: var(--size-4-2);
 	padding-bottom: var(--size-2-3);
 	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* On the card (desktop) the strip hugs the right end of the title row and stays
+   faint until the pointer rests on the card — present, never loud. */
+.focus-first-task-item > .focus-first-task-actions {
+	margin-left: auto;
+	flex-shrink: 0;
+	gap: 0;
+	opacity: 0.3;
+	transition: opacity 120ms ease;
+}
+
+.focus-first-task-item:hover > .focus-first-task-actions,
+.focus-first-task-item:focus-within > .focus-first-task-actions {
+	opacity: 1;
+}
+
+.focus-first-task-item > .focus-first-task-actions .focus-first-task-btn {
+	padding: 1px 3px;
+}
+
+.focus-first-task-item > .focus-first-task-actions .focus-first-task-btn svg {
+	width: 14px;
+	height: 14px;
 }
 
 .focus-first-task-btn {
@@ -1093,4 +1421,282 @@ body.is-mobile .focus-first-task-item.is-expanded .focus-first-triage-detail {
 .focus-first-slot-btn.is-current::before {
 	content: "✓ ";
 	font-weight: 700;
+}
+
+/* ── Dots contributed to the Calendar plugin ─────────────────────────────── */
+/* These rules apply inside another plugin's view, so they are deliberately
+   scoped to this plugin's own `ff-dot` class and never to Calendar's `.dot`
+   alone — its word-count and task dots must keep looking exactly as they did.
+
+   Calendar renders a dot as an <svg> holding one <circle>, and puts fill/stroke
+   on the <svg>, which the circle then inherits; it also reads only the className
+   it is handed (a dot's `color` field is never used), so the colour has to come
+   from here. Declaring fill on the circle beats that inheritance whatever the
+   specificity — which is why every rule below excludes `.active`: on a selected
+   day Calendar repaints its dots in --text-on-accent so they stay visible
+   against the filled cell, and overriding that would hide them.
+
+   The quadrant custom properties are set on Calendar's own view container by
+   this plugin, since the colours are user settings. */
+
+/* A due task: filled, in its quadrant's colour. */
+.dot-container .ff-dot-due:not(.active) circle {
+	fill: var(--ff-dot-color, var(--text-muted));
+}
+
+.dot-container .ff-dot-do        { --ff-dot-color: var(--ff-quadrant-do, #c92a2a); }
+.dot-container .ff-dot-schedule  { --ff-dot-color: var(--ff-quadrant-schedule, #1864ab); }
+.dot-container .ff-dot-delegate  { --ff-dot-color: var(--ff-quadrant-delegate, #e67700); }
+.dot-container .ff-dot-eliminate { --ff-dot-color: var(--ff-quadrant-eliminate, #868e96); }
+
+/* Overdue outranks the quadrant: a day already past with the task still open is
+   the one thing on the grid worth interrupting for. */
+.dot-container .ff-dot-overdue:not(.active) circle {
+	fill: var(--text-error);
+}
+
+/* A progress note: hollow, because it records that something happened rather
+   than that something is owed. */
+.dot-container .ff-dot-progress:not(.active) circle {
+	fill: none;
+	stroke: var(--text-muted);
+}
+
+.dot-container .ff-dot-alert:not(.active) circle {
+	stroke: var(--text-error);
+}
+
+/* The cell itself. Kept to a hairline under the date so it reads as a margin
+   mark, not a highlight — Calendar's own "today" and "active" states have to
+   stay the loudest thing in the grid. */
+.day.ff-has-overdue {
+	box-shadow: inset 0 -2px 0 -1px var(--text-error);
+}
+
+/* PFTF daily planning — quiet surfaces, clear hierarchy, visible editing. */
+.pftf-daily {
+ --pftf-line: var(--background-modifier-border);
+ --pftf-accent-soft: color-mix(in srgb, var(--interactive-accent) 9%, var(--background-primary));
+ padding: 32px clamp(16px, 3vw, 44px);
+ overflow-y: auto;
+ container-type: inline-size;
+ background: var(--background-primary);
+ font-size: calc(var(--font-text-size, 16px) * var(--focus-first-font-scale, 1));
+}
+.pftf-daily-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+.pftf-eyebrow { color: var(--text-muted); font-size: 12px; letter-spacing: .08em; margin-bottom: 9px; }
+.pftf-heading-group h2 { font-size: 28px; font-weight: 650; letter-spacing: -.04em; margin: 0; }
+.pftf-view-switch { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--pftf-line); border-radius: 10px; background: var(--background-secondary); }
+.pftf-view-switch button { box-shadow: none; border: 0; background: transparent; font-size: 12px; color: var(--text-muted); }
+.pftf-view-switch button:hover { background: var(--background-primary); color: var(--text-normal); }
+.pftf-daily-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pftf-daily-toolbar input[type="date"] { height: 36px; border-radius: 8px; font-variant-numeric: tabular-nums; }
+.pftf-daily-toolbar button { height: 36px; border-radius: 8px; box-shadow: none; }
+.pftf-daily-toolbar .mod-cta { margin-left: auto; padding-inline: 18px; }
+.pftf-day-overview { display: flex; align-items: center; gap: 18px; margin: 18px 0 28px; padding-bottom: 22px; border-bottom: 1px solid var(--pftf-line); }
+.pftf-daily-summary { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pftf-day-progress { appearance: none; width: 120px; height: 5px; border: none; border-radius: 5px; overflow: hidden; background: var(--background-modifier-border); accent-color: var(--interactive-accent); }
+.pftf-day-progress::-webkit-progress-bar { background: var(--background-modifier-border); border-radius: 5px; }
+.pftf-day-progress::-webkit-progress-value { background: var(--interactive-accent); border-radius: 5px; }
+.pftf-planning-columns { display: grid; grid-template-columns: minmax(230px, 0.9fr) minmax(300px, 1.25fr); gap: 28px; align-items: start; }
+.pftf-planning-longterm, .pftf-planning-actions { min-width: 0; }
+.pftf-planning-longterm { padding-right: 24px; border-right: 1px solid var(--pftf-line); }
+.pftf-planning-longterm > h3, .pftf-planning-actions > h3 { font-size: 16px; font-weight: 650; margin: 0 0 8px; letter-spacing: -.02em; }
+.pftf-planning-longterm > p, .pftf-planning-actions > p { margin: 0 0 20px; line-height: 1.6; }
+.pftf-planning-card { position: relative; padding: 18px; margin: 12px 0; border: 1px solid var(--pftf-line); border-radius: 12px; background: var(--background-primary); overflow-wrap: anywhere; }
+.pftf-planning-card.is-planned { background: var(--pftf-accent-soft); border-color: color-mix(in srgb, var(--interactive-accent) 24%, var(--pftf-line)); }
+.pftf-planning-task-title, .pftf-daily .pftf-daily-title {
+ display: block; height: auto; width: 100%; padding: 0; margin-bottom: 8px;
+ border: 0; border-radius: 3px; background: transparent; box-shadow: none;
+ color: var(--text-normal); font-size: 15px; line-height: 1.55; font-weight: 600;
+ text-align: left; white-space: normal; overflow-wrap: anywhere; cursor: pointer;
+}
+.pftf-planning-task-title:hover, .pftf-daily .pftf-daily-title:hover { color: var(--interactive-accent); background: transparent; }
+.pftf-planning-progress { font-size: 13px; line-height: 1.65; margin: 14px 0; padding-left: 10px; border-left: 2px solid var(--pftf-line); color: var(--text-muted); }
+.pftf-planning-card-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center; margin-top: 18px; }
+.pftf-planning-count { color: var(--text-muted); font-size: 11px; }
+.pftf-planning-card-footer button { box-shadow: none; border: 1px solid var(--pftf-line); border-radius: 7px; font-size: 12px; height: 30px; background: var(--background-primary); }
+.pftf-planning-overdue { color: var(--text-error); }
+.pftf-daily-section { margin: 22px 0; }
+.pftf-planning-actions .pftf-daily-section:first-of-type { margin-top: 0; }
+.pftf-daily-section > h3 { font-size: 12px; font-weight: 500; color: var(--text-muted); margin: 0 0 12px; }
+.pftf-daily-row { display: flex; flex-direction: column; gap: 14px; padding: 18px 20px 14px; margin: 10px 0; border: 1px solid var(--pftf-line); border-radius: 12px; background: var(--background-primary); transition: border-color .15s ease, box-shadow .15s ease; }
+.pftf-daily-row:hover { border-color: color-mix(in srgb, var(--interactive-accent) 32%, var(--pftf-line)); box-shadow: 0 3px 12px rgb(0 0 0 / 4%); }
+.pftf-daily-body { min-width: 0; overflow-wrap: anywhere; }
+.pftf-daily-meta { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+.pftf-daily-body > p { font-size: 13px; line-height: 1.6; color: var(--text-muted); margin: 12px 0 0; }
+.pftf-daily-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--pftf-line); padding-top: 10px; }
+.pftf-daily-controls button { box-shadow: none; border: 0; background: transparent; color: var(--text-muted); font-size: 12px; border-radius: 6px; height: 28px; padding-inline: 9px; }
+.pftf-daily-controls button:hover { background: var(--background-secondary); color: var(--text-normal); }
+.pftf-daily-controls .pftf-edit-action { color: var(--text-normal); }
+.pftf-daily-controls .pftf-complete-action { margin-left: auto; background: var(--interactive-accent); color: var(--text-on-accent); padding-inline: 16px; }
+.pftf-daily-controls .pftf-complete-action:hover { background: var(--interactive-accent-hover); color: var(--text-on-accent); }
+.pftf-daily-row.is-complete { background: var(--background-secondary); border-color: transparent; }
+.pftf-daily-row.is-complete .pftf-daily-title { color: var(--text-muted); }
+.pftf-daily-empty { border: 1px dashed var(--pftf-line); border-radius: 12px; padding: 24px 18px; color: var(--text-muted); font-size: 13px; line-height: 1.8; text-align: center; }
+.pftf-daily-help { margin: 30px 0 0; color: var(--text-faint); font-size: 11px; line-height: 1.7; }
+.pftf-daily-form { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
+.pftf-daily-form label { font-size: 12px; color: var(--text-muted); margin-top: 10px; }
+.pftf-daily-form input, .pftf-daily-form select, .pftf-daily-form textarea { width: 100%; border-radius: 8px; }
+.pftf-daily-form input, .pftf-daily-form select { height: 38px; }
+.pftf-daily-form textarea { min-height: 104px; resize: vertical; line-height: 1.7; }
+.pftf-form-footer { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--background-modifier-border); padding-top: 18px; margin-top: 14px; }
+.pftf-form-hint { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+.pftf-daily button:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 3px; }
+@container (max-width: 700px) {
+ .pftf-planning-columns { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+ .pftf-planning-longterm { padding-right: 0; border-right: 0; }
+ .pftf-daily-header { align-items: flex-start; flex-direction: column; gap: 16px; }
+}
+@container (max-width: 380px) {
+ .pftf-day-overview { flex-wrap: wrap; gap: 10px; }
+ .pftf-daily-toolbar .mod-cta { margin-left: 0; }
+ .pftf-daily-row { padding: 14px; }
+ .pftf-daily-controls .pftf-complete-action { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .pftf-daily-row { transition: none; } }
+
+/* Work board: one place per module, with a deliberately limited Focus shelf. */
+.focus-first-view .pftf-focus-board {
+ position: relative; padding: 20px; border: 1px solid color-mix(in srgb, var(--interactive-accent) 28%, var(--background-modifier-border));
+ border-radius: 18px; background: linear-gradient(115deg, color-mix(in srgb, var(--interactive-accent) 7%, var(--background-primary)), var(--background-secondary));
+}
+.pftf-focus-board .focus-first-heading { padding-right: 165px; border: 0; }
+.pftf-capacity-controls { position: absolute; right: 20px; top: 22px; display: flex; align-items: center; gap: 12px; }
+.pftf-capacity-count { font-variant-numeric: tabular-nums; font-weight: 650; color: var(--text-muted); }
+.pftf-capacity-count.is-full { color: var(--interactive-accent); }
+.focus-first-view .pftf-focus-slots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 12px; }
+.pftf-focus-empty-slot { min-height: 102px; display: flex; align-items: center; justify-content: center; padding: 18px; border: 1px dashed var(--background-modifier-border); border-radius: 12px; color: var(--text-faint); font-size: .9em; }
+.pftf-work-board { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); grid-template-areas: 'work urgent' 'work delegate'; gap: 18px; align-items: stretch; }
+.pftf-board-lane { min-width: 0; border: 1px solid var(--background-modifier-border); border-radius: 16px; padding: 18px; background: var(--background-secondary); }
+.pftf-board-lane--work { grid-area: work; }
+.pftf-board-lane--urgent { grid-area: urgent; border-top: 3px solid #df9466; }
+.pftf-board-lane--delegate { grid-area: delegate; border-top: 3px solid #8a9ed3; }
+.pftf-board-lane .focus-first-heading { border: 0; padding-top: 0; }
+.pftf-board-lane .focus-first-task-list { margin: 12px 0; display: flex; flex-direction: column; gap: 9px; }
+.pftf-work-board .focus-first-task-item, .pftf-focus-slots .focus-first-task-item {
+ border: 1px solid var(--background-modifier-border); border-radius: 11px; background: var(--background-primary); padding: 14px 42px 14px 14px; margin: 0; position: relative; min-width: 0;
+ transition: box-shadow .15s, border-color .15s;
+}
+.pftf-focus-slots .focus-first-task-item { min-height: 102px; align-content: start; }
+.pftf-work-board .focus-first-task-item:hover, .pftf-focus-slots .focus-first-task-item:hover { box-shadow: 0 5px 18px #00000008; border-color: var(--interactive-accent); }
+.pftf-card-move { position: absolute; right: 9px; top: 10px; width: 28px; height: 28px; padding: 5px; box-shadow: none; border: 0; background: transparent; color: var(--text-muted); cursor: grab; }
+.pftf-card-move svg { width: 15px; height: 15px; }
+.pftf-lane-empty { min-height: 92px; display: grid; place-items: center; color: var(--text-faint); font-size: .9em; }
+.pftf-board-notice { margin-top: 12px; color: var(--text-muted); font-size: .9em; }
+.pftf-board-lane.is-drag-over, .pftf-focus-board.is-drag-over, .pftf-work-board .focus-first-task-item.is-drag-over, .pftf-focus-slots .focus-first-task-item.is-drag-over { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+@container (max-width: 680px) {
+ .pftf-work-board { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'work' 'urgent' 'delegate'; }
+ .focus-first-view .pftf-focus-slots { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 680px) {
+ .pftf-work-board { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'work' 'urgent' 'delegate'; }
+ .focus-first-view .pftf-focus-slots { grid-template-columns: minmax(0, 1fr); }
+}
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-actions { flex-basis: 100%; justify-content: flex-end; margin-top: 8px; }
+.focus-first-view { container-type: inline-size; }
+@container (max-width: 680px) {
+ .focus-first-header { flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+ .focus-first-header h4 { flex-basis: 100%; }
+ .focus-first-header-actions { flex-wrap: wrap; justify-content: flex-start; gap: 6px; }
+ .focus-first-header-actions button { white-space: nowrap; }
+ .pftf-focus-board .focus-first-heading { padding-right: 0; }
+ .pftf-capacity-controls { position: static; margin: 12px 0; justify-content: space-between; }
+ .pftf-work-board .focus-first-task-item > .focus-first-task-actions { flex-basis: 100%; justify-content: flex-end; margin-top: 6px; }
+}
+
+/* Focus is a vertical shortlist at every capacity and screen width. */
+.focus-first-view .pftf-focus-slots .focus-first-task-item { min-height: 62px; }
+.focus-first-view .pftf-focus-empty-slot { min-height: 62px; justify-content: flex-start; }
+.focus-first-view .pftf-focus-slots .focus-first-task-item > .focus-first-task-actions { flex-basis: auto; margin-top: 0; }
+.pftf-log-hint { flex-basis: 100%; color: var(--text-muted); font-size: var(--font-ui-smaller); margin-top: 6px; }
+@container (max-width: 680px) {
+ .focus-first-view .pftf-focus-slots .focus-first-task-item > .focus-first-task-actions { flex-basis: 100%; margin-top: 6px; }
+}
+
+/* Live board sorting: preserve a full card slot as its neighbours slide away. */
+.focus-first-view .focus-first-task-list { position: relative; }
+.focus-first-view .focus-first-task-item.pftf-sort-source { display: none; }
+.focus-first-view .pftf-sort-placeholder {
+ list-style: none;
+ box-sizing: border-box;
+ min-height: 48px;
+ flex-shrink: 0;
+ border: 1px dashed var(--interactive-accent);
+ border-radius: 11px;
+ background: var(--background-modifier-hover);
+ margin: 0;
+ pointer-events: none;
+}
+
+/* The project page has two primary actions: its note and a quick progress entry. */
+.pftf-progress-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+.pftf-progress-note-link { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 85%; }
+.pftf-progress-more { color: var(--text-muted); }
+.focus-first-progress .focus-first-progress-head { border: 0; padding-bottom: 10px; }
+.focus-first-progress .focus-first-progress-composer { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.focus-first-progress textarea.focus-first-progress-input { width: 100%; min-height: 120px; resize: vertical; padding: 14px; border-radius: 10px; font: inherit; line-height: 1.7; }
+.pftf-progress-savebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pftf-progress-savebar .pftf-log-hint { flex: 1; min-width: 0; margin: 0; font-size: 11px; color: var(--text-muted); }
+.pftf-progress-history-label { color: var(--text-muted); font-size: var(--font-ui-small); margin: 24px 0 8px; }
+.pftf-progress-older summary { color: var(--text-muted); cursor: pointer; padding: 12px 0; font-size: var(--font-ui-small); }
+.focus-first-progress .focus-first-progress-list { margin: 0; max-height: 32vh; }
+.focus-first-task-item .pftf-card-progress { font-size: 11px; padding: 2px 8px; height: 24px; color: var(--text-muted); background: transparent; box-shadow: none; border: 1px solid var(--background-modifier-border); border-radius: 6px; flex-shrink: 0; }
+.focus-first-task-item .pftf-card-progress:hover { color: var(--text-accent); border-color: var(--interactive-accent); }
+
+.pftf-progress-savebar button { flex: 0 0 auto; min-width: 64px; white-space: nowrap; }
+
+
+/* Board cards: full title line, then a compact action row. */
+.pftf-work-board .focus-first-task-item > .focus-first-task-text,
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-text {
+ flex: 1 0 100%;
+ overflow-wrap: anywhere;
+ word-break: normal;
+}
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-position {
+ position: absolute;
+ left: 14px;
+ top: 14px;
+}
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-text { padding-left: 24px; }
+.pftf-work-board .focus-first-task-item > .focus-first-task-home,
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-home { display: none; }
+.pftf-work-board .focus-first-task-item > .pftf-card-progress,
+.pftf-focus-slots .focus-first-task-item > .pftf-card-progress {
+ order: 2;
+ margin-top: 5px;
+}
+.pftf-work-board .focus-first-task-item > .focus-first-task-actions,
+.focus-first-view .pftf-focus-slots .focus-first-task-item > .focus-first-task-actions {
+ order: 3;
+ flex: 0 0 auto;
+ margin: 5px 0 0 auto;
+ gap: 4px;
+ opacity: 1;
+}
+.pftf-work-board .focus-first-task-item > .focus-first-task-latest,
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-latest { order: 4; }
+.pftf-work-board .focus-first-task-item > .focus-first-task-actions .focus-first-task-btn,
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-actions .focus-first-task-btn {
+ width: 30px;
+ height: 30px;
+ min-width: 30px;
+ padding: 6px;
+ justify-content: center;
+ border-radius: 7px;
+}
+.pftf-work-board .focus-first-task-item > .focus-first-task-actions .focus-first-done-btn,
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-actions .focus-first-done-btn {
+ color: var(--interactive-accent);
+ background: color-mix(in srgb, var(--interactive-accent) 11%, transparent);
+}
+.pftf-work-board .focus-first-task-item > .focus-first-task-actions .focus-first-done-btn:hover,
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-actions .focus-first-done-btn:hover {
+ background: color-mix(in srgb, var(--interactive-accent) 20%, transparent);
+}
+.pftf-work-board .focus-first-task-item > .focus-first-task-actions .focus-first-task-btn:focus-visible,
+.pftf-focus-slots .focus-first-task-item > .focus-first-task-actions .focus-first-task-btn:focus-visible {
+ outline: 2px solid var(--interactive-accent);
+ outline-offset: 2px;
 }

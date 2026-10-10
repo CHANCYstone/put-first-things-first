@@ -21,8 +21,8 @@ if (!(targetVersion in versions)) {
 // unchanged between two versions. The marker line is rewritten in place on each
 // bump. This matters because the community-store validator rejects a release whose
 // asset digest also carries an attestation from a different ref.
-const styleMarker = /^\/\* Focus First v[^\n]* \*\/\n/;
-const styleHeader = `/* Focus First v${targetVersion} */\n`;
+const styleMarker = /^\/\* (?:Focus First|Put First Things First) v[^\n]* \*\/\n/;
+const styleHeader = `/* Put First Things First v${targetVersion} */\n`;
 let styles = readFileSync('styles.css', 'utf8');
 styles = styleMarker.test(styles) ? styles.replace(styleMarker, styleHeader) : styleHeader + styles;
 writeFileSync('styles.css', styles);

@@ -19,6 +19,7 @@ function makePlugin(
 ) {
 	const store = { ...files };
 	const vault = {
+		getMarkdownFiles: () => Object.keys(store).map(path => new TFile(path)),
 		getAbstractFileByPath: (path: string) => (path in store ? new TFile(path) : null),
 		read: vi.fn(async (file: { path: string }) => store[file.path] ?? ''),
 		modify: vi.fn(async (file: { path: string }, content: string) => { store[file.path] = content; }),
@@ -44,7 +45,7 @@ function openModal(plugin: unknown) {
 }
 
 async function flush() {
-	for (let i = 0; i < 8; i++) await Promise.resolve();
+	for (let i = 0; i < 30; i++) await Promise.resolve();
 }
 
 describe('QuickAddModal', () => {

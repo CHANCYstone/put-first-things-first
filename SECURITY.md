@@ -1,6 +1,6 @@
 # Security Policy
 
-Focus First is a source-available Obsidian plugin maintained by a single person.
+Put First Things First is an open-source Obsidian plugin maintained by a single person.
 It runs entirely inside Obsidian on your own device: it reads the Markdown files
 in your vault, writes task lines back to them, and (when enabled) calls the
 Tasks plugin's public API. It has no backend, sends no telemetry, and makes no
@@ -21,7 +21,7 @@ issue on the current release before reporting it.
 **Please do not open a public issue for a security vulnerability.**
 
 Report it privately through GitHub: go to the
-[Security tab](https://github.com/christian-luger-at/obsidian-focus-first/security)
+[Security tab](https://github.com/CHANCYstone/put-first-things-first/security)
 of the repository and choose **Report a vulnerability**. This opens a private
 advisory that only you and the maintainer can see until a fix is available.
 

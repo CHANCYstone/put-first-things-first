@@ -11,11 +11,11 @@ describe('i18n — locale selection', () => {
 
 	it('returns English strings by default', () => {
 		moment.locale = () => 'en';
-		expect(t().commands.openView.name).toBe('Open Focus First');
+		expect(t().commands.openView.name).toBe('Open Put First Things First');
 	});
 
 	it('returns German strings when the app locale starts with "de"', () => {
 		moment.locale = () => 'de-DE';
-		expect(t().commands.openView.name).toBe('Focus First öffnen');
+		expect(t().commands.openView.name).toBe('Put First Things First öffnen');
 	});
 });

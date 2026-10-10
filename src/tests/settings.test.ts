@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DEFAULT_SETTINGS, FocusFirstSettings, TaskScope, Priority, FolderSuggest, FileSuggest } from '../settings';
 import type { FocusFirstSettingTab as FocusFirstSettingTabType } from '../settings';
 import { createdSettings, clearCreatedSettings, TFolder, TFile, FakeDomEl, Setting } from './__mocks__/obsidian';
-import type { DropdownComponent, TextComponent, ToggleComponent } from './__mocks__/obsidian';
-import type { ExtraButtonComponent } from './__mocks__/obsidian';
+import type { DropdownComponent, TextComponent } from './__mocks__/obsidian';
 
 // Access helpers for the fake DOM elements the mock exposes on settingEl/controlEl.
 interface FakeEl {
@@ -318,12 +317,18 @@ describe('loadSettings — merges persisted data with defaults', () => {
 			highValueTag: '#highvalue',
 			lowValueTag: '#lowvalue',
 			lowEffortSizes: ['small', 'medium'],
-			futureTasks: 'hide',
+			staleDays: 10,
+			progressHeading: 'Log',
+			notesFolder: 'Tasks/Notes',
+			archiveFolder: 'Archive',
+			reviewHeading: 'Retro',
 			quickAddTarget: 'active',
 			quickAddInbox: 'Tasks/Inbox.md',
 			showWhyHere: false,
+			quadrantLimit: 6,
 			fontSize: 120,
 			tasksPluginWarningDismissed: true,
+			calendar: { enabled: false, showDue: false, showProgress: true, maxDots: 5 },
 		};
 		const merged = Object.assign({}, DEFAULT_SETTINGS, persisted);
 
@@ -356,11 +361,6 @@ function scopeDropdown(): DropdownComponent | undefined {
 // Find a text input by its initial value
 function textByValue(value: string): TextComponent | undefined {
 	return createdSettings.find((s) => s.lastText?.inputEl.value === value)?.lastText;
-}
-
-// Find a toggle by its setting name
-function toggleByName(name: string): ToggleComponent | undefined {
-	return createdSettings.find((s) => s.name === name && s.lastToggle)?.lastToggle;
 }
 
 // ---------------------------------------------------------------------------
@@ -414,112 +414,6 @@ describe('FocusFirstSettingTab — folder text onChange', () => {
 		const folderText = textByValue('Work');
 		await folderText?.simulate('');
 		expect(plugin.settings.taskFolder).toBe('');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-});
-
-// ---------------------------------------------------------------------------
-// onChange — urgencyDays text input
-// ---------------------------------------------------------------------------
-
-describe('FocusFirstSettingTab — focusTargetCount text onChange', () => {
-	it('saves a valid non-negative number', async () => {
-		const { plugin } = makeTabWithDisplay({ focusTargetCount: 5 });
-		await textByValue('5')?.simulate('6');
-		expect(plugin.settings.focusTargetCount).toBe(6);
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('clamps invalid or negative input to 0', async () => {
-		const { plugin } = makeTabWithDisplay({ focusTargetCount: 5 });
-		await textByValue('5')?.simulate('-2');
-		expect(plugin.settings.focusTargetCount).toBe(0);
-		await textByValue('0')?.simulate('abc');
-		expect(plugin.settings.focusTargetCount).toBe(0);
-	});
-});
-
-describe('FocusFirstSettingTab — urgencyDays text onChange', () => {
-	it('saves a valid number', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('3')?.simulate('7');
-		expect(plugin.settings.urgencyDays).toBe(7);
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('saves 0 (minimum valid value)', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('3')?.simulate('0');
-		expect(plugin.settings.urgencyDays).toBe(0);
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('saves 364 (maximum valid value)', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('3')?.simulate('364');
-		expect(plugin.settings.urgencyDays).toBe(364);
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('does NOT save when value is 365 (out of range)', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('3')?.simulate('365');
-		expect(plugin.settings.urgencyDays).toBe(3); // unchanged
-		expect(plugin.saveSettings).not.toHaveBeenCalled();
-	});
-
-	it('does NOT save when value is negative', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('3')?.simulate('-1');
-		expect(plugin.settings.urgencyDays).toBe(3);
-		expect(plugin.saveSettings).not.toHaveBeenCalled();
-	});
-
-	it('does NOT save when value is not a number', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('3')?.simulate('abc');
-		expect(plugin.settings.urgencyDays).toBe(3);
-		expect(plugin.saveSettings).not.toHaveBeenCalled();
-	});
-});
-
-// ---------------------------------------------------------------------------
-// onChange — quadrant tag text inputs
-// ---------------------------------------------------------------------------
-
-describe('FocusFirstSettingTab — quadrant tag onChange', () => {
-	it('saves the "do" tag', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('#do')?.simulate('#jetzt');
-		expect(plugin.settings.quadrants.do.tag).toBe('#jetzt');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('saves the "schedule" tag', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('#schedule')?.simulate('#bald');
-		expect(plugin.settings.quadrants.schedule.tag).toBe('#bald');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('saves the "delegate" tag', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('#delegate')?.simulate('#delegieren');
-		expect(plugin.settings.quadrants.delegate.tag).toBe('#delegieren');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('saves the "eliminate" tag', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('#eliminate')?.simulate('#irgendwann');
-		expect(plugin.settings.quadrants.eliminate.tag).toBe('#irgendwann');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('trims whitespace from the saved tag value', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('#do')?.simulate('  #clean  ');
-		expect(plugin.settings.quadrants.do.tag).toBe('#clean');
 		expect(plugin.saveSettings).toHaveBeenCalled();
 	});
 });
@@ -677,98 +571,6 @@ describe('FocusFirstSettingTab — hideTag onChange', () => {
 });
 
 // ---------------------------------------------------------------------------
-// onChange — groupByPrimary toggle
-// ---------------------------------------------------------------------------
-
-describe('FocusFirstSettingTab — groupByPrimary toggle onChange', () => {
-	it('saves true when toggled on', async () => {
-		const { plugin } = makeTabWithDisplay({ groupByPrimary: false });
-		await toggleByName('Group by primary criterion')?.simulate(true);
-		expect(plugin.settings.groupByPrimary).toBe(true);
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('saves false when toggled off', async () => {
-		const { plugin } = makeTabWithDisplay({ groupByPrimary: true });
-		await toggleByName('Group by primary criterion')?.simulate(false);
-		expect(plugin.settings.groupByPrimary).toBe(false);
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('toggle reflects the current setting value', () => {
-		makeTabWithDisplay({ groupByPrimary: true });
-		const toggle = toggleByName('Group by primary criterion');
-		expect(toggle?.getValue()).toBe(true);
-	});
-});
-
-// ---------------------------------------------------------------------------
-// onChange — sort dropdowns
-// ---------------------------------------------------------------------------
-
-describe('FocusFirstSettingTab — sort dropdowns onChange', () => {
-	it('saves primary sort for the "do" quadrant', async () => {
-		// display() creates the "do" quadrant first; its "Primary sort" dropdown is the first match
-		const { plugin } = makeTabWithDisplay();
-		const allPrimary = createdSettings.filter((s) => s.name === 'Primary sort' && s.lastDropdown);
-		await allPrimary[0]?.lastDropdown?.simulate('dueDate');
-		expect(plugin.settings.quadrants.do.sort.primary).toBe('dueDate');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('saves secondary sort for the "do" quadrant', async () => {
-		const { plugin } = makeTabWithDisplay();
-		const allSecondary = createdSettings.filter((s) => s.name === 'Secondary sort' && s.lastDropdown);
-		await allSecondary[0]?.lastDropdown?.simulate('alpha');
-		expect(plugin.settings.quadrants.do.sort.secondary).toBe('alpha');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('saves primary sort for the "schedule" quadrant independently', async () => {
-		const { plugin } = makeTabWithDisplay();
-		const allPrimary = createdSettings.filter((s) => s.name === 'Primary sort' && s.lastDropdown);
-		await allPrimary[1]?.lastDropdown?.simulate('alpha');
-		expect(plugin.settings.quadrants.schedule.sort.primary).toBe('alpha');
-		expect(plugin.settings.quadrants.do.sort.primary).toBe('dueDate'); // unchanged
-	});
-
-	it('primary and secondary dropdowns are independent', async () => {
-		const { plugin } = makeTabWithDisplay();
-		const allPrimary   = createdSettings.filter((s) => s.name === 'Primary sort'   && s.lastDropdown);
-		const allSecondary = createdSettings.filter((s) => s.name === 'Secondary sort' && s.lastDropdown);
-		await allPrimary[0]?.lastDropdown?.simulate('alpha');
-		await allSecondary[0]?.lastDropdown?.simulate('dueDate');
-		expect(plugin.settings.quadrants.do.sort.primary).toBe('alpha');
-		expect(plugin.settings.quadrants.do.sort.secondary).toBe('dueDate');
-	});
-
-	it('four quadrants each have a primary and secondary sort dropdown', () => {
-		makeTabWithDisplay();
-		const primaryCount   = createdSettings.filter((s) => s.name === 'Primary sort'   && s.lastDropdown).length;
-		const secondaryCount = createdSettings.filter((s) => s.name === 'Secondary sort' && s.lastDropdown).length;
-		expect(primaryCount).toBe(4);
-		expect(secondaryCount).toBe(4);
-	});
-
-	it('saves sort for "delegate" quadrant independently', async () => {
-		const { plugin } = makeTabWithDisplay();
-		const allPrimary = createdSettings.filter((s) => s.name === 'Primary sort' && s.lastDropdown);
-		await allPrimary[2]?.lastDropdown?.simulate('priority');
-		expect(plugin.settings.quadrants.delegate.sort.primary).toBe('priority');
-		expect(plugin.settings.quadrants.do.sort.primary).toBe('dueDate'); // unchanged
-		expect(plugin.settings.quadrants.schedule.sort.primary).toBe('priority'); // unchanged
-	});
-
-	it('saves sort for "eliminate" quadrant independently', async () => {
-		const { plugin } = makeTabWithDisplay();
-		const allSecondary = createdSettings.filter((s) => s.name === 'Secondary sort' && s.lastDropdown);
-		await allSecondary[3]?.lastDropdown?.simulate('dueDate');
-		expect(plugin.settings.quadrants.eliminate.sort.secondary).toBe('dueDate');
-		expect(plugin.settings.quadrants.do.sort.secondary).toBe('priority'); // unchanged
-	});
-});
-
-// ---------------------------------------------------------------------------
 // Unit tests — DEFAULT_SETTINGS importantPriorities
 // ---------------------------------------------------------------------------
 
@@ -798,51 +600,6 @@ describe('DEFAULT_SETTINGS — importantPriorities', () => {
 // Quadrant color picker — input event + reset button
 // ---------------------------------------------------------------------------
 
-interface FakeColorInput {
-	value: string;
-	dispatch: (event: string) => void;
-	parentElement: { children: Array<{ tag: string; dispatch: (event: string) => void }> };
-}
-
-function asFakeInput(input: TextComponent | undefined): FakeColorInput {
-	if (!input) throw new Error('color input not found');
-	return input.inputEl as unknown as FakeColorInput;
-}
-
-describe('FocusFirstSettingTab — quadrant color picker', () => {
-	it('writing a new color updates the setting and saves', async () => {
-		const { plugin } = makeTabWithDisplay();
-		const colorInput = textByValue('#c92a2a'); // "do" quadrant default color
-		expect(colorInput).toBeDefined();
-
-		const fake = asFakeInput(colorInput);
-		fake.value = '#123456';
-		fake.dispatch('input');
-		await Promise.resolve();
-
-		expect(plugin.settings.quadrants.do.color).toBe('#123456');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-
-	it('the reset button restores the default color and saves', async () => {
-		const { plugin } = makeTabWithDisplay();
-		const fake = asFakeInput(textByValue('#c92a2a'));
-
-		// Change it first so the reset is observable.
-		fake.value = '#000000';
-		fake.dispatch('input');
-		expect(plugin.settings.quadrants.do.color).toBe('#000000');
-
-		const resetBtn = fake.parentElement.children.find((c) => c.tag === 'button');
-		expect(resetBtn).toBeDefined();
-		resetBtn?.dispatch('click');
-		await Promise.resolve();
-
-		expect(plugin.settings.quadrants.do.color).toBe('#c92a2a');
-		expect(fake.value).toBe('#c92a2a');
-	});
-});
-
 // ---------------------------------------------------------------------------
 // Font size slider onChange
 // ---------------------------------------------------------------------------
@@ -858,57 +615,6 @@ describe('FocusFirstSettingTab — font size slider', () => {
 		expect(plugin.settings.fontSize).toBe(130);
 		expect(plugin.saveSettings).toHaveBeenCalled();
 		expect(plugin.applyFontSize).toHaveBeenCalled();
-	});
-});
-
-// ---------------------------------------------------------------------------
-// Important-priorities pills
-// ---------------------------------------------------------------------------
-
-describe('FocusFirstSettingTab — important priority pills', () => {
-	function pills(): FakeEl[] {
-		const control = createdSettings
-			.map((s) => asFakeEl(s.controlEl))
-			.find((el) => el.findByClass('focus-first-pill'));
-		return control?.findByClass('focus-first-pill-group')?.children ?? [];
-	}
-
-	it('clicking a pill toggles the priority (both directions) and saves', async () => {
-		const { plugin } = makeTabWithDisplay();
-		const before = plugin.settings.importantPriorities.length;
-		const firstPill = pills()[0];
-		expect(firstPill).toBeDefined();
-
-		firstPill?.dispatch('click');
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(plugin.settings.importantPriorities.length).not.toBe(before);
-		expect(plugin.saveSettings).toHaveBeenCalled();
-
-		// Clicking again reverses it — covers the opposite branch of the toggle.
-		firstPill?.dispatch('click');
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(plugin.settings.importantPriorities.length).toBe(before);
-	});
-});
-
-// ---------------------------------------------------------------------------
-// Collapsible section header click
-// ---------------------------------------------------------------------------
-
-describe('FocusFirstSettingTab — collapsible header click', () => {
-	it('toggles on a header click but ignores clicks on the chevron button', () => {
-		makeTabWithDisplay();
-		const header = createdSettings
-			.map((s) => asFakeEl(s.settingEl))
-			.find((el) => el.classList.contains('focus-first-section-header'));
-		expect(header).toBeDefined();
-
-		// Target is not the chevron → toggle runs.
-		expect(() => header?.dispatch('click', { target: { closest: () => null } })).not.toThrow();
-		// Target is the chevron button → handler returns early.
-		expect(() => header?.dispatch('click', { target: { closest: () => ({}) } })).not.toThrow();
 	});
 });
 
@@ -1072,70 +778,8 @@ describe('FocusFirstSettingTab — reset-all button', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Integration — collapsible quadrant sections
-// ---------------------------------------------------------------------------
-
-describe('FocusFirstSettingTab — collapsible quadrant sections', () => {
-	it('renders a chevron extra-button for each of the four quadrant sub-sections', () => {
-		makeTabWithDisplay();
-		const chevronCount = createdSettings.filter((s) => s.lastExtraButton).length;
-		expect(chevronCount).toBe(4);
-	});
-
-	it('clicking a quadrant chevron toggles its icon between collapsed and expanded', async () => {
-		makeTabWithDisplay();
-		const chevrons = createdSettings
-			.filter((s) => s.lastExtraButton)
-			.map((s) => s.lastExtraButton as ExtraButtonComponent);
-
-		// Quadrant sub-sections start collapsed by default
-		const first = chevrons[0];
-		expect(first).toBeDefined();
-		const setIconSpy = vi.spyOn(first!, 'setIcon');
-
-		await first?.simulate();
-
-		expect(setIconSpy).toHaveBeenCalledWith('chevron-down');
-	});
-
-	it('clicking the same chevron twice returns it to the collapsed icon', async () => {
-		makeTabWithDisplay();
-		const first = createdSettings.find((s) => s.lastExtraButton)?.lastExtraButton as ExtraButtonComponent;
-		const setIconSpy = vi.spyOn(first, 'setIcon');
-
-		await first.simulate();
-		await first.simulate();
-
-		expect(setIconSpy).toHaveBeenLastCalledWith('chevron-right');
-	});
-});
-
-// ---------------------------------------------------------------------------
 // onChange — Value/Effort settings (#36)
 // ---------------------------------------------------------------------------
-
-function dropdownByName(name: string): DropdownComponent | undefined {
-	return createdSettings.find((s) => s.name === name && s.lastDropdown)?.lastDropdown;
-}
-
-describe('FocusFirstSettingTab — value/effort onChange (#36)', () => {
-	it('sets the value source and saves', async () => {
-		const { plugin } = makeTabWithDisplay({ valueSource: 'priority' });
-		await dropdownByName('Value source')?.simulate('manualTag');
-		expect(plugin.settings.valueSource).toBe('manualTag');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-		expect(plugin.refreshViews).toHaveBeenCalled();
-	});
-
-	it('saves the high-value and low-value tags', async () => {
-		const { plugin } = makeTabWithDisplay();
-		await textByValue('#highvalue')?.simulate('#vip');
-		expect(plugin.settings.highValueTag).toBe('#vip');
-		await textByValue('#lowvalue')?.simulate('#meh');
-		expect(plugin.settings.lowValueTag).toBe('#meh');
-		expect(plugin.saveSettings).toHaveBeenCalled();
-	});
-});
 
 // ---------------------------------------------------------------------------
 // Declarative settings API (Obsidian 1.13+)
@@ -1171,11 +815,10 @@ describe('getSettingDefinitions — shape', () => {
 		expect(definitions(tab).every((g) => g.type === 'group')).toBe(true);
 		expect(definitions(tab).map((g) => g.heading)).toEqual([
 			t().settings.taskSourcesHeading,
-			t().settings.classificationHeading,
-			t().settings.quadrantsHeading,
 			t().settings.tagsHeading,
-			t().settings.valueEffortHeading,
+			t().settings.progressGroupHeading,
 			t().settings.quickAddHeading,
+			t().settings.calendarHeading,
 			t().settings.appearanceHeading,
 			t().settings.resetHeading,
 		]);
@@ -1186,14 +829,6 @@ describe('getSettingDefinitions — shape', () => {
 		for (const item of allItems(tab)) {
 			expect(Boolean(item.control) !== Boolean(item.render)).toBe(true);
 		}
-	});
-
-	it('offers a collapsible block for each of the four quadrants', () => {
-		const tab = makeTab(makePlugin());
-		const quadrants = definitions(tab).find((g) => g.heading === t().settings.quadrantsHeading);
-		// groupByPrimary toggle + four quadrant blocks
-		expect(quadrants?.items).toHaveLength(5);
-		expect(quadrants?.items?.filter((i) => i.render)).toHaveLength(4);
 	});
 });
 
@@ -1293,36 +928,13 @@ describe('getSettingDefinitions — conditional rows', () => {
 	});
 });
 
-describe('getSettingDefinitions — render callbacks reuse the shared widgets', () => {
-	it('renders the priority pills into the row it is given', () => {
-		const tab = makeTab(makePlugin());
-		const item = allItems(tab).find((i) => i.name === t().settings.importantPriorities.name);
-		const setting = new Setting(new FakeDomEl());
-		clearCreatedSettings();
-		item!.render!(setting);
-		expect(asFakeEl(setting.controlEl).findByClass('focus-first-pill-group')).toBeDefined();
-	});
-
-	it('renders the quadrant colour, tag, and sort fields for a quadrant block', () => {
-		const tab = makeTab(makePlugin());
-		const quadrants = definitions(tab).find((g) => g.heading === t().settings.quadrantsHeading);
-		const firstBlock = quadrants!.items!.filter((i) => i.render)[0];
-		clearCreatedSettings();
-		firstBlock!.render!(new Setting(new FakeDomEl()));
-		// The block's body holds colour + tag + primary sort + secondary sort.
-		const names = createdSettings.map((s) => s.name);
-		expect(names).toContain(t().settings.sortPrimary.name);
-		expect(names).toContain(t().settings.sortSecondary.name);
-	});
-});
-
 describe('getSettingDefinitions — every render callback works', () => {
 	it('renders each custom widget into a fresh row without throwing', () => {
 		const tab = makeTab(makePlugin());
 		const withRender = allItems(tab).filter((i) => i.render);
-		// task folder, hint paragraph, priority pills, 4 quadrants, effort pills,
-		// inbox note, reset button
-		expect(withRender).toHaveLength(10);
+		// task folder, hint paragraph, priority pills, 4 quadrants, notes folder,
+		// archive folder, effort pills, inbox note, reset button
+		expect(withRender).toHaveLength(6);
 		for (const item of withRender) {
 			const container = new FakeDomEl();
 			expect(() => item.render!(new Setting(container))).not.toThrow();
@@ -1335,14 +947,6 @@ describe('getSettingDefinitions — every render callback works', () => {
 		const container = new FakeDomEl();
 		item!.render!(new Setting(container));
 		expect(asFakeEl(container).findByClass('focus-first-setting-error')).toBeDefined();
-	});
-
-	it('renders the effort pills', () => {
-		const tab = makeTab(makePlugin());
-		const item = allItems(tab).find((i) => i.name === t().settings.lowEffortSizes.name);
-		const setting = new Setting(new FakeDomEl());
-		item!.render!(setting);
-		expect(asFakeEl(setting.controlEl).findByClass('focus-first-pill-group')).toBeDefined();
 	});
 
 	it('the reset row resets the settings and rebuilds the tab', async () => {
@@ -1361,27 +965,6 @@ describe('getSettingDefinitions — every render callback works', () => {
 
 		expect(resetSpy).toHaveBeenCalledOnce();
 		expect(updateSpy).toHaveBeenCalledOnce();
-	});
-});
-
-describe('getSettingDefinitions — urgencyDays validation', () => {
-	function validator() {
-		const tab = makeTab(makePlugin());
-		const item = allItems(tab).find((i) => i.control?.key === 'urgencyDays');
-		return (item!.control as unknown as { validate: (v: number) => string | undefined }).validate;
-	}
-
-	it('accepts the allowed range', () => {
-		const validate = validator();
-		expect(validate(0)).toBeUndefined();
-		expect(validate(364)).toBeUndefined();
-	});
-
-	it('rejects out-of-range and non-integer values', () => {
-		const validate = validator();
-		expect(validate(365)).toBeTruthy();
-		expect(validate(-1)).toBeTruthy();
-		expect(validate(1.5)).toBeTruthy();
 	});
 });
 
@@ -1412,68 +995,5 @@ describe('setControlValue — dependent rows', () => {
 		const refreshSpy = vi.spyOn(tab, 'refreshDomState');
 		await tab.setControlValue('hideTag', '#gone');
 		expect(refreshSpy).not.toHaveBeenCalled();
-	});
-});
-
-describe('getSettingDefinitions — quadrant block interaction', () => {
-	function renderFirstQuadrantBlock(tab: FocusFirstSettingTabType) {
-		const quadrants = definitions(tab).find((g) => g.heading === t().settings.quadrantsHeading);
-		const block = quadrants!.items!.filter((i) => i.render)[0];
-		clearCreatedSettings();
-		const setting = new Setting(new FakeDomEl());
-		block!.render!(setting);
-		return { setting, block };
-	}
-
-	it('toggles the chevron between collapsed and expanded', async () => {
-		const tab = makeTab(makePlugin());
-		renderFirstQuadrantBlock(tab);
-
-		const chevron = createdSettings.find((s) => s.lastExtraButton)?.lastExtraButton as ExtraButtonComponent;
-		const setIconSpy = vi.spyOn(chevron, 'setIcon');
-
-		await chevron.simulate();
-		expect(setIconSpy).toHaveBeenCalledWith('chevron-down');
-
-		await chevron.simulate();
-		expect(setIconSpy).toHaveBeenLastCalledWith('chevron-right');
-	});
-
-	it('starts expanded once the block has been opened', () => {
-		const tab = makeTab(makePlugin());
-		// Open it, then render the same block again: it should come back expanded.
-		const first = renderFirstQuadrantBlock(tab);
-		asFakeEl(first.setting.settingEl).dispatch('click', { target: { closest: () => null } });
-
-		clearCreatedSettings();
-		first.block!.render!(new Setting(new FakeDomEl()));
-		const chevron = createdSettings.find((s) => s.lastExtraButton)?.lastExtraButton as ExtraButtonComponent;
-		expect(chevron.icon).toBe('chevron-down');
-	});
-
-	it('toggles on a header click but ignores clicks on the chevron itself', () => {
-		const tab = makeTab(makePlugin());
-		const { setting } = renderFirstQuadrantBlock(tab);
-		const header = asFakeEl(setting.settingEl);
-
-		expect(() => header.dispatch('click', { target: { closest: () => null } })).not.toThrow();
-		expect(() => header.dispatch('click', { target: { closest: () => ({}) } })).not.toThrow();
-	});
-});
-
-describe('getSettingDefinitions — effort pills toggle both ways', () => {
-	it('removes a size that was already selected', async () => {
-		const plugin = makePlugin({ lowEffortSizes: ['small'] });
-		const tab = makeTab(plugin);
-		const item = allItems(tab).find((i) => i.name === t().settings.lowEffortSizes.name);
-		const setting = new Setting(new FakeDomEl());
-		item!.render!(setting);
-
-		const pills = asFakeEl(setting.controlEl).findByClass('focus-first-pill-group')!.children;
-		pills[0]!.dispatch('click'); // "small", currently active
-		await Promise.resolve();
-		await Promise.resolve();
-
-		expect(plugin.settings.lowEffortSizes).not.toContain('small');
 	});
 });

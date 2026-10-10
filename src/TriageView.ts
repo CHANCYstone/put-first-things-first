@@ -1,6 +1,6 @@
 import { ItemView, WorkspaceLeaf, TFile, setIcon, debounce, Platform } from 'obsidian';
 import FocusFirstPlugin from './main';
-import { scanTasks, TaskItem, isFutureTask, isHiddenTask } from './taskScanner';
+import { scanTasks, TaskItem, isHiddenTask } from './taskScanner';
 import {
 	classifyTasks, MatrixTask, Quadrant, matchesTriageFilter, isUnclassified,
 	TriageFilter, TriageSystem,
@@ -12,7 +12,7 @@ import { renderNoMatches } from './taskEmptyStates';
 import { moveTaskToQuadrant, moveTaskToValueEffort } from './taskDragDrop';
 import { showUndoNotice } from './undo';
 
-export const FOCUS_FIRST_TRIAGE_VIEW_TYPE = 'focus-first-triage-view';
+export const FOCUS_FIRST_TRIAGE_VIEW_TYPE = 'put-first-things-first-triage-view';
 
 const QUADRANT_ORDER: Quadrant[] = ['do', 'schedule', 'delegate', 'eliminate'];
 
@@ -150,7 +150,6 @@ export class TriageView extends ItemView {
 		return this.tasks
 			.filter((task) => !task.completed)
 			.filter((task) => !isHiddenTask(task, this.plugin.settings))
-			.filter((task) => this.plugin.settings.futureTasks !== 'hide' || !isFutureTask(task))
 			.filter((task) => {
 				if (!query) return true;
 				const text = task.line.replace(/^[\s\-*]*\[.\]\s*/, '').toLowerCase();

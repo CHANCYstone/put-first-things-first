@@ -26,6 +26,15 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
+# Publishing must target the maintainer's repository, never the upstream fork.
+if [[ "$PUBLISH" == "true" ]]; then
+    ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
+    if [[ "$ORIGIN_URL" != "https://github.com/CHANCYstone/put-first-things-first.git" && "$ORIGIN_URL" != "git@github.com:CHANCYstone/put-first-things-first.git" ]]; then
+        echo "Error: origin must be the CHANCYstone PFTF repository before publishing." >&2
+        exit 1
+    fi
+fi
+
 # --- Bump the version (optional) --------------------------------------------
 
 if [[ -n "$BUMP" ]]; then
@@ -64,7 +73,7 @@ TAG="${VERSION}"
 # Local staging folder only (cosmetic) — keeps the "v" for readability.
 RELEASE_DIR="releases/v${VERSION}"
 
-echo "Building Focus First ${VERSION}..."
+echo "Building Put First Things First ${VERSION}..."
 
 # Run tests
 npm test

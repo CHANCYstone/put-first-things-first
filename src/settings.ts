@@ -1,3 +1,5 @@
+import { Notice } from 'obsidian';
+import { focusCapacity, setFocusCapacity } from './workBoard';
 import {
 	App,
 	PluginSettingTab,
@@ -15,9 +17,6 @@ import { t } from './i18n';
 export type TaskScope = 'all' | 'folder';
 
 export type SortField = 'priority' | 'dueDate' | 'alpha';
-
-/** How to treat tasks whose start/scheduled date is still in the future. */
-export type FutureTasksMode = 'show' | 'dim' | 'hide';
 
 /** Where quick-added tasks are written. */
 export type QuickAddTarget = 'inbox' | 'active';
@@ -60,6 +59,21 @@ export type AxisMode = 'eisenhower' | 'valueEffort';
 /** Where the Value axis gets its value from, in the Value/Effort matrix (#36). */
 export type ValueSource = 'priority' | 'manualTag';
 
+/**
+ * What this plugin adds to the Calendar plugin's day cells. Off-by-default would
+ * hide the feature from everyone who already has both plugins, and a source that
+ * is never registered costs nothing when Calendar is absent — so it starts on.
+ */
+export interface CalendarSettings {
+	enabled: boolean;
+	/** A filled dot, in the quadrant's colour, on a task's due day. */
+	showDue: boolean;
+	/** A hollow dot on a day a progress note was written. */
+	showProgress: boolean;
+	/** Most dots one cell may show before the rest are left to the count attribute. */
+	maxDots: number;
+}
+
 /** The open, configurable tags that mark a task's size (defaults #s / #m / #l). */
 export interface SizeTags {
 	small: string;
@@ -84,7 +98,7 @@ export interface FocusFirstSettings {
 	quadrants: QuadrantConfig;
 	groupByPrimary: boolean;
 	focusTag: string;
-	/** Optional daily target for the focus shortlist (0 = no target). */
+	/** Maximum Focus occupancy, restricted to 1–3. Legacy overflow is preserved. */
 	focusTargetCount: number;
 	/**
 	 * Manual order of the focus shortlist, as stable per-task keys
@@ -93,6 +107,9 @@ export interface FocusFirstSettings {
 	 * only ever holds keys for tasks currently in focus.
 	 */
 	focusOrder: string[];
+	boardOrder?: string[];
+	/** First automatic log date; retained across restarts for offline catch-up. */
+	dailyLogStartDate?: string;
 	hideTag: string;
 	/** Open, configurable tags marking task size / effort (foundation for #35). */
 	sizeTags: SizeTags;
@@ -106,14 +123,27 @@ export interface FocusFirstSettings {
 	lowValueTag: string;
 	/** Which sizes count as "low effort" on the effort axis (#36). */
 	lowEffortSizes: TaskSize[];
-	futureTasks: FutureTasksMode;
+	/** Days after a task's last progress note before its log counts as stale. */
+	staleDays: number;
+	/** Heading of the section in a home note that holds the progress log. */
+	progressHeading: string;
+	/** Folder for notes created by "give this task a note"; blank = next to the task's note. */
+	notesFolder: string;
+	/** Folder archived home notes move to; blank = leave them where they are. */
+	archiveFolder: string;
+	/** Heading of the review section added to a note when its task is archived; blank = none. */
+	reviewHeading: string;
 	quickAddTarget: QuickAddTarget;
 	quickAddInbox: string;
 	/** Whether the detail popover shows the "why here" classification reason. */
 	showWhyHere: boolean;
+	/** How many tasks a quadrant shows before folding the rest behind "N more" (0 = all). */
+	quadrantLimit: number;
 	fontSize: number;
 	/** Set once the user dismisses the "Tasks plugin not enabled" notice. */
 	tasksPluginWarningDismissed: boolean;
+	/** What this plugin contributes to the Calendar plugin's month grid. */
+	calendar: CalendarSettings;
 }
 
 export const DEFAULT_SETTINGS: FocusFirstSettings = {
@@ -130,7 +160,7 @@ export const DEFAULT_SETTINGS: FocusFirstSettings = {
 	},
 	groupByPrimary: true,
 	focusTag: '#focus',
-	focusTargetCount: 0,
+	focusTargetCount: 3,
 	focusOrder: [],
 	hideTag: '#hide',
 	sizeTags: { small: '#s', medium: '#m', large: '#l' },
@@ -139,12 +169,18 @@ export const DEFAULT_SETTINGS: FocusFirstSettings = {
 	highValueTag: '#highvalue',
 	lowValueTag: '#lowvalue',
 	lowEffortSizes: ['small'],
-	futureTasks: 'show',
+	staleDays: 7,
+	progressHeading: 'Progress',
+	notesFolder: '',
+	archiveFolder: '',
+	reviewHeading: 'Review',
 	quickAddTarget: 'inbox',
 	quickAddInbox: '',
 	showWhyHere: true,
+	quadrantLimit: 4,
 	fontSize: 100,
 	tasksPluginWarningDismissed: false,
+	calendar: { enabled: true, showDue: true, showProgress: true, maxDots: 3 },
 };
 
 export class FolderSuggest extends AbstractInputSuggest<TFolder> {
@@ -355,6 +391,20 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 
 		updateError();
 		return updateError;
+	}
+
+	/** A plain folder field with a suggester, for the notes and archive folders. Blank is allowed. */
+	private renderFolderField(setting: Setting, key: 'notesFolder' | 'archiveFolder'): void {
+		setting.addText((text) => {
+			text
+				.setPlaceholder(t().settings[key].placeholder)
+				.setValue(this.plugin.settings[key])
+				.onChange(async (value) => {
+					this.plugin.settings[key] = value.trim();
+					await this.plugin.saveSettings();
+				});
+			new FolderSuggest(this.app, text.inputEl);
+		});
 	}
 
 	/** Important-priority pills (multi-select), plus the "none selected" error line. */
@@ -587,18 +637,20 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 	 * (see getControlValue) instead of silently reading or writing nothing.
 	 */
 	private static readonly CONTROL_KEYS: ReadonlySet<string> = new Set([
-		'taskScope', 'showSubtasks', 'urgencyDays', 'futureTasks', 'groupByPrimary',
-		'focusTag', 'focusTargetCount', 'hideTag',
+		'taskScope', 'showSubtasks', 'urgencyDays', 'groupByPrimary',
+		'focusTag', 'focusTargetCount', 'hideTag', 'staleDays', 'progressHeading', 'reviewHeading',
 		'sizeTags.small', 'sizeTags.medium', 'sizeTags.large',
 		'valueSource', 'highValueTag', 'lowValueTag',
-		'quickAddTarget', 'fontSize', 'showWhyHere',
+		'quickAddTarget', 'fontSize', 'showWhyHere', 'quadrantLimit',
+		'calendar.enabled', 'calendar.showDue', 'calendar.showProgress', 'calendar.maxDots',
 	]);
 
 	/** Keys whose change has to reach an open view, mirroring display()'s own onChange handlers. */
 	private static readonly REFRESH_VIEWS_KEYS: ReadonlySet<string> = new Set([
-		'futureTasks', 'focusTargetCount',
+		'focusTargetCount', 'staleDays', 'progressHeading',
 		'sizeTags.small', 'sizeTags.medium', 'sizeTags.large',
-		'valueSource', 'highValueTag', 'lowValueTag', 'showWhyHere',
+		'valueSource', 'highValueTag', 'lowValueTag', 'showWhyHere', 'quadrantLimit',
+		'calendar.enabled', 'calendar.showDue', 'calendar.showProgress', 'calendar.maxDots',
 	]);
 
 	/** Keys another setting's `visible` predicate depends on, so the row appears at once. */
@@ -664,11 +716,10 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		return [
 			this.taskSourcesGroup(),
-			this.classificationGroup(),
-			this.quadrantsGroup(),
 			this.tagsGroup(),
-			this.valueEffortGroup(),
+			this.progressGroup(),
 			this.quickAddGroup(),
+			this.calendarGroup(),
 			this.appearanceGroup(),
 			this.resetGroup(),
 		];
@@ -743,19 +794,6 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 					desc: t().settings.importantPriorities.desc,
 					render: (setting) => { this.renderPriorityPills(setting); },
 				},
-				{
-					name: t().settings.futureTasks.name,
-					desc: t().settings.futureTasks.desc,
-					control: {
-						type: 'dropdown',
-						key: 'futureTasks',
-						options: {
-							show: t().settings.futureTasks.optionShow,
-							dim: t().settings.futureTasks.optionDim,
-							hide: t().settings.futureTasks.optionHide,
-						},
-					},
-				},
 			],
 		};
 	}
@@ -799,11 +837,9 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 					control: { type: 'text', key: 'focusTag', placeholder: DEFAULT_SETTINGS.focusTag },
 				},
 				{
-					name: t().settings.focusTargetCount.name,
-					desc: t().settings.focusTargetCount.desc,
-					// No upper bound and no validate: display() clamps junk to 0, and
-					// the shortlist only ever compares this with `> 0`.
-					control: { type: 'number', key: 'focusTargetCount', placeholder: '0', min: 0, step: 1, defaultValue: 0 },
+					name: 'Focus 容量',
+					desc: '保留 1–3 个重点位置。减少容量前，请先移出多余事项。',
+					render: (setting: Setting) => this.renderFocusCapacity(setting),
 				},
 				{
 					name: t().settings.hideTag.name,
@@ -822,6 +858,50 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 				{
 					name: t().settings.sizeTagLarge,
 					control: { type: 'text', key: 'sizeTags.large', placeholder: DEFAULT_SETTINGS.sizeTags.large },
+				},
+			],
+		};
+	}
+
+	private progressGroup(): SettingDefinitionGroup {
+		return {
+			type: 'group',
+			heading: t().settings.progressGroupHeading,
+			items: [
+				{
+					name: t().settings.staleDays.name,
+					desc: t().settings.staleDays.desc,
+					control: {
+						type: 'number',
+						key: 'staleDays',
+						placeholder: '7',
+						min: 0,
+						max: 365,
+						step: 1,
+						defaultValue: this.plugin.settings.staleDays,
+						validate: (value) =>
+							!Number.isInteger(value) || value < 0 ? t().settings.staleDays.error : undefined,
+					},
+				},
+				{
+					name: t().settings.progressHeading.name,
+					desc: t().settings.progressHeading.desc,
+					control: { type: 'text', key: 'progressHeading', placeholder: DEFAULT_SETTINGS.progressHeading },
+				},
+				{
+					name: t().settings.notesFolder.name,
+					desc: t().settings.notesFolder.desc,
+					render: (setting) => { this.renderFolderField(setting, 'notesFolder'); },
+				},
+				{
+					name: t().settings.archiveFolder.name,
+					desc: t().settings.archiveFolder.desc,
+					render: (setting) => { this.renderFolderField(setting, 'archiveFolder'); },
+				},
+				{
+					name: t().settings.reviewHeading.name,
+					desc: t().settings.reviewHeading.desc,
+					control: { type: 'text', key: 'reviewHeading', placeholder: DEFAULT_SETTINGS.reviewHeading },
 				},
 			],
 		};
@@ -890,6 +970,48 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 		};
 	}
 
+	private calendarGroup(): SettingDefinitionGroup {
+		return {
+			type: 'group',
+			heading: t().settings.calendarHeading,
+			items: [
+				{
+					name: t().settings.calendarEnabled.name,
+					desc: t().settings.calendarEnabled.desc,
+					control: { type: 'toggle', key: 'calendar.enabled' },
+				},
+				{
+					name: t().settings.calendarShowDue.name,
+					desc: t().settings.calendarShowDue.desc,
+					visible: () => this.plugin.settings.calendar.enabled,
+					control: { type: 'toggle', key: 'calendar.showDue' },
+				},
+				{
+					name: t().settings.calendarShowProgress.name,
+					desc: t().settings.calendarShowProgress.desc,
+					visible: () => this.plugin.settings.calendar.enabled,
+					control: { type: 'toggle', key: 'calendar.showProgress' },
+				},
+				{
+					name: t().settings.calendarMaxDots.name,
+					desc: t().settings.calendarMaxDots.desc,
+					visible: () => this.plugin.settings.calendar.enabled,
+					control: {
+						type: 'number',
+						key: 'calendar.maxDots',
+						placeholder: '3',
+						min: 1,
+						max: 9,
+						step: 1,
+						defaultValue: this.plugin.settings.calendar.maxDots,
+						validate: (value) =>
+							!Number.isInteger(value) || value < 1 ? t().settings.calendarMaxDots.error : undefined,
+					},
+				},
+			],
+		};
+	}
+
 	private appearanceGroup(): SettingDefinitionGroup {
 		return {
 			type: 'group',
@@ -904,6 +1026,21 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 					name: t().settings.showWhyHere.name,
 					desc: t().settings.showWhyHere.desc,
 					control: { type: 'toggle', key: 'showWhyHere' },
+				},
+				{
+					name: t().settings.quadrantLimit.name,
+					desc: t().settings.quadrantLimit.desc,
+					control: {
+						type: 'number',
+						key: 'quadrantLimit',
+						placeholder: '4',
+						min: 0,
+						max: 99,
+						step: 1,
+						defaultValue: this.plugin.settings.quadrantLimit,
+						validate: (value) =>
+							!Number.isInteger(value) || value < 0 ? t().settings.quadrantLimit.error : undefined,
+					},
 				},
 			],
 		};
@@ -923,6 +1060,23 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 				},
 			],
 		};
+	}
+
+	private renderFocusCapacity(setting: Setting): void {
+		setting.addDropdown(drop => {
+			for (const n of [1, 2, 3]) drop.addOption(String(n), `${n} 个位置`);
+			drop.setValue(String(focusCapacity(this.plugin.settings.focusTargetCount)));
+			drop.onChange(async value => {
+				try {
+					await setFocusCapacity(this.app, this.plugin.settings, Number(value));
+					await this.plugin.saveSettings();
+					this.plugin.refreshViews();
+				} catch (error) {
+					new Notice(error instanceof Error ? error.message : '无法调整容量');
+					drop.setValue(String(focusCapacity(this.plugin.settings.focusTargetCount)));
+				}
+			});
+		});
 	}
 
 	display(): void {
@@ -983,91 +1137,6 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 				);
 		});
 
-		this.createSection(containerEl, t().settings.classificationHeading, (body) => {
-			body.createEl('p', { text: t().settings.matrixDesc, cls: 'focus-first-setting-hint' });
-
-			const urgencySetting = new Setting(body)
-				.setName(t().settings.urgencyDays.name)
-				.setDesc(t().settings.urgencyDays.desc)
-				.addText((text) => {
-					text
-						.setPlaceholder('3')
-						.setValue(String(this.plugin.settings.urgencyDays))
-						.onChange(async (value) => {
-							const parsed = parseInt(value, 10);
-							const valid = !isNaN(parsed) && parsed >= 0 && parsed < 365;
-							text.inputEl.classList.toggle('is-invalid', !valid);
-							errorEl.classList.toggle('focus-first-hidden', valid);
-							if (valid) {
-								this.plugin.settings.urgencyDays = parsed;
-								await this.plugin.saveSettings();
-							}
-						});
-					text.inputEl.setAttribute('type', 'number');
-					text.inputEl.setAttribute('min', '0');
-					text.inputEl.setAttribute('max', '364');
-				});
-
-			const errorEl = body.createEl('p', {
-				text: t().settings.urgencyDays.error,
-				cls: 'focus-first-setting-error',
-			});
-			errorEl.classList.add('focus-first-hidden');
-			urgencySetting.settingEl.after(errorEl);
-
-			this.renderPriorityPills(
-				new Setting(body)
-					.setName(t().settings.importantPriorities.name)
-					.setDesc(t().settings.importantPriorities.desc),
-			);
-
-			new Setting(body)
-				.setName(t().settings.futureTasks.name)
-				.setDesc(t().settings.futureTasks.desc)
-				.addDropdown((drop) =>
-					drop
-						.addOption('show', t().settings.futureTasks.optionShow)
-						.addOption('dim', t().settings.futureTasks.optionDim)
-						.addOption('hide', t().settings.futureTasks.optionHide)
-						.setValue(this.plugin.settings.futureTasks)
-						.onChange(async (value: string) => {
-							this.plugin.settings.futureTasks = value as FutureTasksMode;
-							await this.plugin.saveSettings();
-							this.plugin.refreshViews();
-						}),
-				);
-		});
-
-		this.createSection(containerEl, t().settings.quadrantsHeading, (body) => {
-			new Setting(body)
-				.setName(t().settings.groupByPrimary.name)
-				.setDesc(t().settings.groupByPrimary.desc)
-				.addToggle((toggle) =>
-					toggle
-						.setValue(this.plugin.settings.groupByPrimary)
-						.onChange(async (value) => {
-							this.plugin.settings.groupByPrimary = value;
-							await this.plugin.saveSettings();
-						}),
-				);
-
-			const quadrantDefs: { key: keyof QuadrantConfig; label: string }[] = [
-				{ key: 'do',       label: t().view.quadrants.do.title },
-				{ key: 'schedule', label: t().view.quadrants.schedule.title },
-				{ key: 'delegate', label: t().view.quadrants.delegate.title },
-				{ key: 'eliminate',label: t().view.quadrants.eliminate.title },
-			];
-
-			for (const def of quadrantDefs) {
-				this.createCollapsibleSection(
-					body,
-					`quadrant-${def.key}`,
-					`${def.label} — ${t().view.quadrants[def.key].subtitle}`,
-					(qBody) => this.renderQuadrantBody(qBody, def.key),
-				);
-			}
-		});
-
 		this.createSection(containerEl, t().settings.tagsHeading, (body) => {
 			new Setting(body)
 				.setName(t().settings.focusTag.name)
@@ -1082,22 +1151,7 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 						}),
 				);
 
-			new Setting(body)
-				.setName(t().settings.focusTargetCount.name)
-				.setDesc(t().settings.focusTargetCount.desc)
-				.addText((text) => {
-					text
-						.setPlaceholder('0')
-						.setValue(String(this.plugin.settings.focusTargetCount))
-						.onChange(async (value) => {
-							const parsed = parseInt(value, 10);
-							this.plugin.settings.focusTargetCount = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-							await this.plugin.saveSettings();
-							this.plugin.refreshViews();
-						});
-					text.inputEl.setAttribute('type', 'number');
-					text.inputEl.setAttribute('min', '0');
-				});
+			this.renderFocusCapacity(new Setting(body).setName('Focus 容量').setDesc('保留 1–3 个重点位置。减少容量前，请先移出多余事项。'));
 
 			new Setting(body)
 				.setName(t().settings.hideTag.name)
@@ -1153,59 +1207,67 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 				);
 		});
 
+		this.createSection(containerEl, t().settings.progressGroupHeading, (body) => {
+			new Setting(body)
+				.setName(t().settings.staleDays.name)
+				.setDesc(t().settings.staleDays.desc)
+				.addText((text) => {
+					text
+						.setPlaceholder('7')
+						.setValue(String(this.plugin.settings.staleDays))
+						.onChange(async (value) => {
+							const parsed = parseInt(value, 10);
+							const valid = Number.isInteger(parsed) && parsed >= 0;
+							text.inputEl.classList.toggle('is-invalid', !valid);
+							if (!valid) return;
+							this.plugin.settings.staleDays = parsed;
+							await this.plugin.saveSettings();
+							this.plugin.refreshViews();
+						});
+					text.inputEl.setAttribute('type', 'number');
+					text.inputEl.setAttribute('min', '0');
+				});
+
+			new Setting(body)
+				.setName(t().settings.progressHeading.name)
+				.setDesc(t().settings.progressHeading.desc)
+				.addText((text) =>
+					text
+						.setPlaceholder(DEFAULT_SETTINGS.progressHeading)
+						.setValue(this.plugin.settings.progressHeading)
+						.onChange(async (value) => {
+							this.plugin.settings.progressHeading = value.trim();
+							await this.plugin.saveSettings();
+							this.plugin.refreshViews();
+						}),
+				);
+
+			this.renderFolderField(
+				new Setting(body).setName(t().settings.notesFolder.name).setDesc(t().settings.notesFolder.desc),
+				'notesFolder',
+			);
+			this.renderFolderField(
+				new Setting(body).setName(t().settings.archiveFolder.name).setDesc(t().settings.archiveFolder.desc),
+				'archiveFolder',
+			);
+
+			new Setting(body)
+				.setName(t().settings.reviewHeading.name)
+				.setDesc(t().settings.reviewHeading.desc)
+				.addText((text) =>
+					text
+						.setPlaceholder(DEFAULT_SETTINGS.reviewHeading)
+						.setValue(this.plugin.settings.reviewHeading)
+						.onChange(async (value) => {
+							this.plugin.settings.reviewHeading = value.trim();
+							await this.plugin.saveSettings();
+						}),
+				);
+		});
+
 		// Advanced escape hatch for the Value/Effort preset (#36). The axis itself is
 		// switched in the view header; this only configures how value and effort are
 		// resolved. Presets stay the primary UX — this is deliberately secondary.
-		this.createSection(containerEl, t().settings.valueEffortHeading, (body) => {
-			new Setting(body)
-				.setName(t().settings.valueSource.name)
-				.setDesc(t().settings.valueSource.desc)
-				.addDropdown((drop) =>
-					drop
-						.addOption('priority', t().settings.valueSource.optionPriority)
-						.addOption('manualTag', t().settings.valueSource.optionManualTag)
-						.setValue(this.plugin.settings.valueSource)
-						.onChange(async (value: string) => {
-							this.plugin.settings.valueSource = value as ValueSource;
-							await this.plugin.saveSettings();
-							this.plugin.refreshViews();
-						}),
-				);
-
-			new Setting(body)
-				.setName(t().settings.highValueTag.name)
-				.setDesc(t().settings.highValueTag.desc)
-				.addText((text) =>
-					text
-						.setPlaceholder(DEFAULT_SETTINGS.highValueTag)
-						.setValue(this.plugin.settings.highValueTag)
-						.onChange(async (value) => {
-							this.plugin.settings.highValueTag = value.trim();
-							await this.plugin.saveSettings();
-							this.plugin.refreshViews();
-						}),
-				);
-
-			new Setting(body)
-				.setName(t().settings.lowValueTag.name)
-				.setDesc(t().settings.lowValueTag.desc)
-				.addText((text) =>
-					text
-						.setPlaceholder(DEFAULT_SETTINGS.lowValueTag)
-						.setValue(this.plugin.settings.lowValueTag)
-						.onChange(async (value) => {
-							this.plugin.settings.lowValueTag = value.trim();
-							await this.plugin.saveSettings();
-							this.plugin.refreshViews();
-						}),
-				);
-
-			this.renderLowEffortPills(
-				new Setting(body)
-					.setName(t().settings.lowEffortSizes.name)
-					.setDesc(t().settings.lowEffortSizes.desc),
-			);
-		});
 
 		this.createSection(containerEl, t().settings.quickAddHeading, (body) => {
 			// The inbox path field is always rendered and shown/hidden by target, so
@@ -1239,6 +1301,76 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 			updateInboxVisibility();
 		});
 
+		this.createSection(containerEl, t().settings.calendarHeading, (body) => {
+			// The three detail rows are always rendered and shown/hidden by the master
+			// toggle, so turning the integration off doesn't re-render the whole tab.
+			let updateDetailVisibility: () => void = () => {};
+
+			new Setting(body)
+				.setName(t().settings.calendarEnabled.name)
+				.setDesc(t().settings.calendarEnabled.desc)
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.calendar.enabled)
+						.onChange(async (value) => {
+							this.plugin.settings.calendar.enabled = value;
+							await this.plugin.saveSettings();
+							this.plugin.refreshViews();
+							updateDetailVisibility();
+						}),
+				);
+
+			const dueSetting = new Setting(body)
+				.setName(t().settings.calendarShowDue.name)
+				.setDesc(t().settings.calendarShowDue.desc)
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.calendar.showDue)
+						.onChange(async (value) => {
+							this.plugin.settings.calendar.showDue = value;
+							await this.plugin.saveSettings();
+							this.plugin.refreshViews();
+						}),
+				);
+
+			const progressSetting = new Setting(body)
+				.setName(t().settings.calendarShowProgress.name)
+				.setDesc(t().settings.calendarShowProgress.desc)
+				.addToggle((toggle) =>
+					toggle
+						.setValue(this.plugin.settings.calendar.showProgress)
+						.onChange(async (value) => {
+							this.plugin.settings.calendar.showProgress = value;
+							await this.plugin.saveSettings();
+							this.plugin.refreshViews();
+						}),
+				);
+
+			const maxDotsSetting = new Setting(body)
+				.setName(t().settings.calendarMaxDots.name)
+				.setDesc(t().settings.calendarMaxDots.desc)
+				.addText((text) =>
+					text
+						.setPlaceholder('3')
+						.setValue(String(this.plugin.settings.calendar.maxDots))
+						.onChange(async (value) => {
+							const parsed = Number(value);
+							if (!Number.isInteger(parsed) || parsed < 1) return;
+							this.plugin.settings.calendar.maxDots = parsed;
+							await this.plugin.saveSettings();
+							this.plugin.refreshViews();
+						}),
+				);
+
+			updateDetailVisibility = () => {
+				const on = this.plugin.settings.calendar.enabled;
+				for (const setting of [dueSetting, progressSetting, maxDotsSetting]) {
+					setting.settingEl.classList.toggle('focus-first-hidden', !on);
+				}
+			};
+			updateDetailVisibility();
+		});
+
 		this.createSection(containerEl, t().settings.appearanceHeading, (body) => {
 			new Setting(body)
 				.setName(t().settings.fontSize.name)
@@ -1266,6 +1398,26 @@ export class FocusFirstSettingTab extends PluginSettingTab {
 							this.plugin.refreshViews();
 						}),
 				);
+
+			new Setting(body)
+				.setName(t().settings.quadrantLimit.name)
+				.setDesc(t().settings.quadrantLimit.desc)
+				.addText((text) => {
+					text
+						.setPlaceholder('4')
+						.setValue(String(this.plugin.settings.quadrantLimit))
+						.onChange(async (value) => {
+							const parsed = parseInt(value, 10);
+							const valid = Number.isInteger(parsed) && parsed >= 0;
+							text.inputEl.classList.toggle('is-invalid', !valid);
+							if (!valid) return;
+							this.plugin.settings.quadrantLimit = parsed;
+							await this.plugin.saveSettings();
+							this.plugin.refreshViews();
+						});
+					text.inputEl.setAttribute('type', 'number');
+					text.inputEl.setAttribute('min', '0');
+				});
 		});
 
 		this.createSection(containerEl, t().settings.resetHeading, (body) => {

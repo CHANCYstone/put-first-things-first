@@ -2,8 +2,8 @@
 layout: home
 
 hero:
-  name: Focus First
-  text: Always know what to work on next
+  name: Focus First (legacy documentation)
+  text: Historical upstream documentation
   tagline: An Obsidian plugin that sorts your tasks into the Eisenhower (or Value/Effort) matrix, automatically.
   image:
     src: /screens/tour.gif

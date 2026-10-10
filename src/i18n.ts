@@ -8,6 +8,8 @@ interface Translations {
 		openView: { name: string };
 		openTriage: { name: string };
 		addTask: { name: string };
+		promoteTask: { name: string };
+		archiveTask: { name: string };
 	};
 	quickAdd: {
 		title: string;
@@ -31,6 +33,8 @@ interface Translations {
 		searchPlaceholder: string;
 		searchToggle: string;
 		add: string;
+		addHere: string;
+		addHerePlaceholder: string;
 		manualTag: string;
 		scope: string;
 		scopeAll: string;
@@ -65,19 +69,18 @@ interface Translations {
 			focused: string;
 			unfocused: string;
 			unpinned: string;
+			noted: string;
 		};
 		actions: {
 			more: string;
 			openNote: string;
 			postpone: string;
 			priority: string;
-			postponePlusDay: string;
-			postponePlusWeek: string;
-			dueToday: string;
 			dueTomorrow: string;
-			hideUntilTomorrow: string;
-			hideUntilNextWeek: string;
-			hideUntilMonday: string;
+			dueNextWeek: string;
+			pickDate: string;
+			clearDue: string;
+			save: string;
 			priorityNone: string;
 			priorityHighest: string;
 			priorityHigh: string;
@@ -94,8 +97,6 @@ interface Translations {
 			priority: string;
 			size: string;
 			due: string;
-			start: string;
-			scheduled: string;
 			tags: string;
 			note: string;
 			why: string;
@@ -153,6 +154,7 @@ interface Translations {
 		appearanceHeading: string;
 		fontSize: { name: string; desc: string };
 		showWhyHere: { name: string; desc: string };
+		quadrantLimit: { name: string; desc: string; error: string };
 		taskSourcesHeading: string;
 		taskScope: {
 			name: string;
@@ -186,13 +188,12 @@ interface Translations {
 		highValueTag: { name: string; desc: string };
 		lowValueTag: { name: string; desc: string };
 		lowEffortSizes: { name: string; desc: string };
-		futureTasks: {
-			name: string;
-			desc: string;
-			optionShow: string;
-			optionDim: string;
-			optionHide: string;
-		};
+		progressGroupHeading: string;
+		staleDays: { name: string; desc: string; error: string };
+		progressHeading: { name: string; desc: string };
+		notesFolder: { name: string; desc: string; placeholder: string };
+		archiveFolder: { name: string; desc: string; placeholder: string };
+		reviewHeading: { name: string; desc: string };
 		quickAddHeading: string;
 		quickAddTarget: {
 			name: string;
@@ -201,6 +202,11 @@ interface Translations {
 			optionActive: string;
 		};
 		quickAddInbox: { name: string; desc: string; placeholder: string };
+		calendarHeading: string;
+		calendarEnabled: { name: string; desc: string };
+		calendarShowDue: { name: string; desc: string };
+		calendarShowProgress: { name: string; desc: string };
+		calendarMaxDots: { name: string; desc: string; error: string };
 		matrixDesc: string;
 		quadrantsHeading: string;
 		quadrantColor: { name: string; desc: string; reset: string };
@@ -216,11 +222,35 @@ interface Translations {
 	groups: {
 		noPriority: string;
 		overdue: string;
-		today: string;
-		thisWeek: string;
-		upcoming: string;
+		soon: string;
 		later: string;
 		noDate: string;
+	};
+	progress: {
+		title: string;
+		none: string;
+		empty: string;
+		placeholder: string;
+		alert: string;
+		add: string;
+		lastNote: string;
+		lastNoteToday: string;
+		lastNoteUndated: string;
+		openEntry: string;
+		stale: string;
+		home: string;
+		openHome: string;
+		promote: string;
+		promoteHint: string;
+		promoted: string;
+		promotedLinked: string;
+		promoteNoTitle: string;
+		archive: string;
+		archived: string;
+		archivedNoFolder: string;
+		archiveNeedsNote: string;
+		archiveTargetExists: string;
+		notATask: string;
 	};
 	tasksBlock: {
 		missing: string;
@@ -230,11 +260,13 @@ interface Translations {
 
 const translations: Record<Lang, Translations> = {
 	en: {
-		ribbon: { tooltip: 'Focus first' },
+		ribbon: { tooltip: 'Put first things first' },
 		commands: {
-			openView: { name: 'Open Focus First' },
+			openView: { name: 'Open Put First Things First' },
 			openTriage: { name: 'Open triage' },
 			addTask: { name: 'Add task' },
+			promoteTask: { name: 'Give the current task its own note' },
+			archiveTask: { name: 'Archive the current task' },
 		},
 		quickAdd: {
 			title: 'Add task',
@@ -246,18 +278,20 @@ const translations: Record<Lang, Translations> = {
 			noActiveNote: 'No active note — add one to the inbox instead, or open a note.',
 			inboxSetup: {
 				title: 'Where should new tasks go?',
-				description: 'Focus First saves quick-added tasks to an inbox note. Choose the note to use — it will be created if it doesn\'t exist yet. You can change this any time under the plugin settings.',
+				description: 'Put First Things First saves quick-added tasks to an inbox note. Choose the note to use — it will be created if it doesn\'t exist yet. You can change this any time under the plugin settings.',
 				placeholder: 'e.g. Inbox.md',
 				save: 'Save',
 				cancel: 'Cancel',
 			},
 		},
 		view: {
-			title: 'Focus First',
+			title: 'Put First Things First',
 			refresh: 'Refresh',
 			searchPlaceholder: 'Search tasks…',
 			searchToggle: 'Search',
 			add: 'Add',
+			addHere: 'Add here',
+			addHerePlaceholder: 'New task — Enter to add, Esc to cancel',
 			manualTag: 'Manually assigned via tag',
 			scope: 'Scope',
 			scopeAll: 'Entire vault',
@@ -268,12 +302,12 @@ const translations: Record<Lang, Translations> = {
 				noMatches: 'No tasks match your search or filters.',
 				clearFilters: 'Clear search & filters',
 				onboardingTitle: 'No tasks yet',
-				onboardingBody: 'Focus First reads standard checkbox tasks from your vault. Add a due date (📅) for urgency and a priority (🔺⏫) for importance, and each task is sorted into the matrix automatically. Tip: adjust which folder is scanned and what counts as urgent/important under Settings → Community plugins → Focus First.',
+				onboardingBody: 'Put First Things First reads standard checkbox tasks from your vault. Add a due date (📅) for urgency and a priority (🔺⏫) for importance, and each task is sorted into the matrix automatically. Tip: adjust which folder is scanned and what counts as urgent/important under Settings → Community plugins → Put First Things First.',
 				eliminateHintTitle: 'Everything landed in “Eliminate”',
 				eliminateHintBody: 'None of your tasks have a due date or an important priority, so nothing counts as urgent or important yet. Add a due date (📅) and/or a priority (🔺⏫) to see tasks move into the other quadrants. You can change the urgency threshold and which priorities count as important in the settings.',
 				example: '- [ ] Finish the quarterly report 📅 2026-07-02 🔺',
 			},
-			tasksPluginWarning: 'The Tasks plugin is not enabled. Focus First works with plain checkboxes, but the Tasks plugin makes adding due dates and priorities much easier.',
+			tasksPluginWarning: 'The Tasks plugin is not enabled. Put First Things First works with plain checkboxes, but the Tasks plugin makes adding due dates and priorities much easier.',
 			tasksPluginWarningDismiss: 'Dismiss',
 			focusSectionTitle: 'Focus Tasks',
 			focusOverTarget: 'Beyond today\'s target',
@@ -292,19 +326,18 @@ const translations: Record<Lang, Translations> = {
 				focused: 'Task focused',
 				unfocused: 'Focus removed',
 				unpinned: 'Returned to automatic sorting',
+				noted: 'Note added',
 			},
 			actions: {
 				more: 'More actions',
 				openNote: 'Open note',
 				postpone: 'Postpone',
 				priority: 'Set priority',
-				postponePlusDay: '+1 day',
-				postponePlusWeek: '+1 week',
-				dueToday: 'Due today',
 				dueTomorrow: 'Due tomorrow',
-				hideUntilTomorrow: 'Hide until tomorrow',
-				hideUntilNextWeek: 'Hide until next week',
-				hideUntilMonday: 'Hide until Monday',
+				dueNextWeek: 'Due next week',
+				pickDate: 'Pick a date…',
+				clearDue: 'Remove due date',
+				save: 'Save',
 				priorityNone: 'No priority',
 				priorityHighest: '🔺 Highest',
 				priorityHigh: '⏫ High',
@@ -321,8 +354,6 @@ const translations: Record<Lang, Translations> = {
 				priority: 'Priority',
 				size: 'Size',
 				due: 'Due',
-				start: 'Start',
-				scheduled: 'Scheduled',
 				tags: 'Tags',
 				note: 'Note',
 				why: 'Why here',
@@ -361,7 +392,7 @@ const translations: Record<Lang, Translations> = {
 				eliminate:{ title: 'Time Sinks',  subtitle: 'Low value · High effort',  emptyState: 'No time sinks' },
 			},
 			triage: {
-				viewTitle: 'Focus First: Triage',
+				viewTitle: 'Put First Things First: Triage',
 				filterLabel: 'Triage scope',
 				filterEisenhower: 'Eisenhower',
 				filterValueEffort: 'Value/Effort',
@@ -384,22 +415,27 @@ const translations: Record<Lang, Translations> = {
 			appearanceHeading: 'Appearance',
 			fontSize: {
 				name: 'Font size',
-				desc: 'Adjust the text size used throughout the Focus First view.',
+				desc: 'Adjust the text size used throughout the Put First Things First view.',
 			},
 			showWhyHere: {
 				name: 'Show "why here" reason',
 				desc: 'Show a line in the task detail popover explaining why a task landed in its quadrant (urgency/importance or a manual tag).',
 			},
+			quadrantLimit: {
+				name: 'Rows visible per list',
+				desc: 'Each quadrant (and the focus list) shows about this many tasks and scrolls inside itself for the rest, so the matrix stays a page you can take in at a glance. 0 shows everything.',
+				error: 'Please enter a whole number (0 or more).',
+			},
 			taskSourcesHeading: 'Task Sources',
 			taskScope: {
 				name: 'Scan scope',
-				desc: 'Define where Focus First looks for tasks. Choose "Entire vault" to include all notes, or "Specific folder" to limit the search to one location.',
+				desc: 'Define where Put First Things First looks for tasks. Choose "Entire vault" to include all notes, or "Specific folder" to limit the search to one location.',
 				optionAll: 'Entire vault',
 				optionFolder: 'Specific folder',
 			},
 			taskFolder: {
 				name: 'Folder',
-				desc: 'Only tasks inside this folder (and its sub-folders) will appear in Focus First.',
+				desc: 'Only tasks inside this folder (and its sub-folders) will appear in Put First Things First.',
 				placeholder: 'e.g. Projects/Work',
 				error: 'Please select a folder.',
 			},
@@ -454,12 +490,29 @@ const translations: Record<Lang, Translations> = {
 				name: 'Low-effort sizes',
 				desc: 'Which task sizes count as "low effort" on the effort axis. Un-sized tasks always count as high effort.',
 			},
-			futureTasks: {
-				name: 'Not-yet-started tasks',
-				desc: 'How to treat tasks whose start (🛫) or scheduled (⏳) date is still in the future — they are not actionable yet. The due date still drives urgency and classification.',
-				optionShow: 'Show',
-				optionDim: 'Dim',
-				optionHide: 'Hide',
+			progressGroupHeading: 'Progress notes',
+			staleDays: {
+				name: 'Stale after (days)',
+				desc: 'A task whose latest progress note is older than this many days is marked as stale on its card, so the ones you have stopped touching stand out.',
+				error: 'Please enter a whole number of days (0 or more).',
+			},
+			progressHeading: {
+				name: 'Progress section heading',
+				desc: 'When a task links to a note of its own, its progress notes are kept in that note under this heading (created at the end of the note if missing).',
+			},
+			notesFolder: {
+				name: 'Folder for task notes',
+				desc: '"Give this task its own note" creates the note here. Leave blank to create it next to the note the task is in.',
+				placeholder: 'e.g. Tasks/Notes',
+			},
+			archiveFolder: {
+				name: 'Archive folder',
+				desc: 'Archiving a task moves its note here. Leave blank to check the task off and leave the note where it is.',
+				placeholder: 'e.g. Archive',
+			},
+			reviewHeading: {
+				name: 'Review section heading',
+				desc: 'Archiving adds an empty section with this heading to the note, as a place to write down what got done and what to do differently. Leave blank to skip.',
 			},
 			quickAddHeading: 'Quick Add',
 			quickAddTarget: {
@@ -472,6 +525,24 @@ const translations: Record<Lang, Translations> = {
 				name: 'Inbox note',
 				desc: 'Path to the note that receives quick-added tasks when "Add tasks to" is set to the inbox. Created if it does not exist.',
 				placeholder: 'Inbox.md',
+			},
+			calendarHeading: 'Calendar plugin',
+			calendarEnabled: {
+				name: 'Show tasks in the Calendar plugin',
+				desc: 'Adds dots to the day cells of the Calendar plugin\'s month grid. Has no effect if that plugin is not installed.',
+			},
+			calendarShowDue: {
+				name: 'Mark due dates',
+				desc: 'A filled dot, in the quadrant\'s colour, on the day a task is due. Days already past are marked as overdue.',
+			},
+			calendarShowProgress: {
+				name: 'Mark progress notes',
+				desc: 'A hollow dot on every day a progress note was written, so the month shows what actually moved.',
+			},
+			calendarMaxDots: {
+				name: 'Most dots per day',
+				desc: 'A busy day is capped at this many dots so the cell stays readable; the full count stays on the cell as a data attribute.',
+				error: 'Enter a whole number of 1 or more.',
 			},
 			matrixDesc: 'These rules determine how tasks are automatically placed into quadrants based on their due date and priority.',
 			quadrantsHeading: 'Quadrants',
@@ -500,7 +571,7 @@ const translations: Record<Lang, Translations> = {
 			resetHeading: 'Reset',
 			resetAll: {
 				name: 'Reset all settings',
-				desc: 'Resets every Focus First setting to its default value. This cannot be undone.',
+				desc: 'Resets every Put First Things First setting to its default value. This cannot be undone.',
 				button: 'Reset to defaults',
 			},
 			toggleSection: 'Expand or collapse this section',
@@ -508,11 +579,35 @@ const translations: Record<Lang, Translations> = {
 		groups: {
 			noPriority: 'No priority',
 			overdue: 'Overdue',
-			today: 'Today',
-			thisWeek: 'Next 7 days',
-			upcoming: 'Next 14 days',
+			soon: 'Due within {days} days',
 			later: 'Later',
 			noDate: 'No due date',
+		},
+		progress: {
+			title: 'Progress',
+			none: 'No notes yet',
+			empty: 'Nothing noted yet. Write down what happened, or what went wrong.',
+			placeholder: 'What happened?',
+			alert: 'Mark as an alert (⚠)',
+			add: 'Add note',
+			lastNote: 'Last note {days} d ago',
+			lastNoteToday: 'Last note today',
+			lastNoteUndated: 'Last note undated',
+			openEntry: 'Open this line in the note',
+			stale: 'The note changed since this page was opened — refresh and try again.',
+			home: 'Note',
+			openHome: 'Open {name}',
+			promote: 'Give this task its own note',
+			promoteHint: 'For a task that lasts weeks: a note of its own to link things to, and to keep its progress in.',
+			promoted: 'Created {name} and linked the task to it',
+			promotedLinked: 'Linked the task to the existing note {name}',
+			promoteNoTitle: 'The task has no text to name a note after.',
+			archive: 'Archive',
+			archived: 'Task done — note moved to {folder}',
+			archivedNoFolder: 'Task done — note left in place (no archive folder set)',
+			archiveNeedsNote: 'Give the task its own note first; only tasks with a note can be archived.',
+			archiveTargetExists: 'Task done, but a note with that name already exists in the archive folder — moved nothing.',
+			notATask: 'The cursor is not on a task line.',
 		},
 		tasksBlock: {
 			missing: 'The Tasks plugin must be installed and enabled to use this block.',
@@ -520,11 +615,13 @@ const translations: Record<Lang, Translations> = {
 		},
 	},
 	de: {
-		ribbon: { tooltip: 'Focus First' },
+		ribbon: { tooltip: 'Put First Things First' },
 		commands: {
-			openView: { name: 'Focus First öffnen' },
+			openView: { name: 'Put First Things First öffnen' },
 			openTriage: { name: 'Triage öffnen' },
 			addTask: { name: 'Aufgabe hinzufügen' },
+			promoteTask: { name: 'Aktueller Aufgabe eine eigene Notiz geben' },
+			archiveTask: { name: 'Aktuelle Aufgabe archivieren' },
 		},
 		quickAdd: {
 			title: 'Aufgabe hinzufügen',
@@ -536,18 +633,20 @@ const translations: Record<Lang, Translations> = {
 			noActiveNote: 'Keine aktive Notiz — stattdessen in die Inbox einfügen oder eine Notiz öffnen.',
 			inboxSetup: {
 				title: 'Wohin sollen neue Aufgaben?',
-				description: 'Focus First speichert schnell erfasste Aufgaben in einer Inbox-Notiz. Wähle die zu verwendende Notiz — sie wird angelegt, falls sie noch nicht existiert. Du kannst das jederzeit in den Plugin-Einstellungen ändern.',
+				description: 'Put First Things First speichert schnell erfasste Aufgaben in einer Inbox-Notiz. Wähle die zu verwendende Notiz — sie wird angelegt, falls sie noch nicht existiert. Du kannst das jederzeit in den Plugin-Einstellungen ändern.',
 				placeholder: 'z. B. Inbox.md',
 				save: 'Speichern',
 				cancel: 'Abbrechen',
 			},
 		},
 		view: {
-			title: 'Focus First',
+			title: 'Put First Things First',
 			refresh: 'Aktualisieren',
 			searchPlaceholder: 'Aufgaben suchen…',
 			searchToggle: 'Suchen',
 			add: 'Hinzufügen',
+			addHere: 'Hier hinzufügen',
+			addHerePlaceholder: 'Neue Aufgabe — Enter fügt hinzu, Esc bricht ab',
 			manualTag: 'Manuell per Tag zugewiesen',
 			scope: 'Bereich',
 			scopeAll: 'Gesamter Vault',
@@ -558,12 +657,12 @@ const translations: Record<Lang, Translations> = {
 				noMatches: 'Keine Aufgaben passen zu deiner Suche oder deinen Filtern.',
 				clearFilters: 'Suche & Filter zurücksetzen',
 				onboardingTitle: 'Noch keine Aufgaben',
-				onboardingBody: 'Focus First liest normale Checkbox-Aufgaben aus deinem Vault. Ergänze ein Fälligkeitsdatum (📅) für Dringlichkeit und eine Priorität (🔺⏫) für Wichtigkeit, dann wird jede Aufgabe automatisch in die Matrix einsortiert. Tipp: Welcher Ordner durchsucht wird und was als dringend/wichtig zählt, stellst du unter Einstellungen → Community-Plugins → Focus First ein.',
+				onboardingBody: 'Put First Things First liest normale Checkbox-Aufgaben aus deinem Vault. Ergänze ein Fälligkeitsdatum (📅) für Dringlichkeit und eine Priorität (🔺⏫) für Wichtigkeit, dann wird jede Aufgabe automatisch in die Matrix einsortiert. Tipp: Welcher Ordner durchsucht wird und was als dringend/wichtig zählt, stellst du unter Einstellungen → Community-Plugins → Put First Things First ein.',
 				eliminateHintTitle: 'Alles landet in „Eliminieren“',
 				eliminateHintBody: 'Keine deiner Aufgaben hat ein Fälligkeitsdatum oder eine wichtige Priorität, daher gilt noch nichts als dringend oder wichtig. Ergänze ein Fälligkeitsdatum (📅) und/oder eine Priorität (🔺⏫), damit Aufgaben in die anderen Quadranten wandern. Die Dringlichkeitsschwelle und welche Prioritäten als wichtig zählen, kannst du in den Einstellungen anpassen.',
 				example: '- [ ] Quartalsbericht fertigstellen 📅 2026-07-02 🔺',
 			},
-			tasksPluginWarning: 'Das Tasks-Plugin ist nicht aktiviert. Focus First funktioniert auch mit normalen Checkboxen, aber mit dem Tasks-Plugin lassen sich Fälligkeitsdaten und Prioritäten viel einfacher setzen.',
+			tasksPluginWarning: 'Das Tasks-Plugin ist nicht aktiviert. Put First Things First funktioniert auch mit normalen Checkboxen, aber mit dem Tasks-Plugin lassen sich Fälligkeitsdaten und Prioritäten viel einfacher setzen.',
 			tasksPluginWarningDismiss: 'Ausblenden',
 			focusSectionTitle: 'Fokus-Aufgaben',
 			focusOverTarget: 'Über dem Tagesziel',
@@ -581,6 +680,7 @@ const translations: Record<Lang, Translations> = {
 				focused: 'Aufgabe fokussiert',
 				unfocused: 'Fokus entfernt',
 				unpinned: 'Automatische Klassifizierung wiederhergestellt',
+				noted: 'Notiz hinzugefügt',
 			},
 			focusDone: 'Als erledigt markieren',
 			actions: {
@@ -588,13 +688,11 @@ const translations: Record<Lang, Translations> = {
 				openNote: 'Notiz öffnen',
 				postpone: 'Verschieben',
 				priority: 'Priorität setzen',
-				postponePlusDay: '+1 Tag',
-				postponePlusWeek: '+1 Woche',
-				dueToday: 'Fällig heute',
 				dueTomorrow: 'Fällig morgen',
-				hideUntilTomorrow: 'Ausblenden bis morgen',
-				hideUntilNextWeek: 'Ausblenden bis nächste Woche',
-				hideUntilMonday: 'Ausblenden bis Montag',
+				dueNextWeek: 'Fällig nächste Woche',
+				pickDate: 'Datum wählen…',
+				clearDue: 'Fälligkeitsdatum entfernen',
+				save: 'Speichern',
 				priorityNone: 'Keine Priorität',
 				priorityHighest: '🔺 Höchste',
 				priorityHigh: '⏫ Hoch',
@@ -611,8 +709,6 @@ const translations: Record<Lang, Translations> = {
 				priority: 'Priorität',
 				size: 'Größe',
 				due: 'Fällig',
-				start: 'Start',
-				scheduled: 'Geplant',
 				tags: 'Tags',
 				note: 'Notiz',
 				why: 'Warum hier',
@@ -651,7 +747,7 @@ const translations: Record<Lang, Translations> = {
 				eliminate:{ title: 'Zeitfresser', subtitle: 'Geringer Wert · Hoher Aufwand',  emptyState: 'Keine Zeitfresser' },
 			},
 			triage: {
-				viewTitle: 'Focus First: Triage',
+				viewTitle: 'Put First Things First: Triage',
 				filterLabel: 'Triage-Umfang',
 				filterEisenhower: 'Eisenhower',
 				filterValueEffort: 'Wert/Aufwand',
@@ -674,7 +770,12 @@ const translations: Record<Lang, Translations> = {
 			appearanceHeading: 'Erscheinungsbild',
 			fontSize: {
 				name: 'Schriftgröße',
-				desc: 'Passt die Textgröße in der gesamten Focus-First-Ansicht an.',
+				desc: 'Passt die Textgröße in der gesamten Put-First-Things-First-Ansicht an.',
+			},
+			quadrantLimit: {
+				name: 'Sichtbare Zeilen pro Liste',
+				desc: 'Jeder Quadrant (und die Fokus-Liste) zeigt etwa so viele Aufgaben und scrollt für den Rest in sich selbst, damit die Matrix eine Seite bleibt, die man auf einen Blick erfasst. 0 zeigt alles.',
+				error: 'Bitte eine ganze Zahl eingeben (0 oder mehr).',
 			},
 			showWhyHere: {
 				name: '„Warum hier"-Begründung anzeigen',
@@ -683,13 +784,13 @@ const translations: Record<Lang, Translations> = {
 			taskSourcesHeading: 'Aufgabenquellen',
 			taskScope: {
 				name: 'Suchbereich',
-				desc: 'Legt fest, wo Focus First nach Aufgaben sucht. „Gesamter Vault" durchsucht alle Notizen; „Bestimmter Ordner" begrenzt die Suche auf einen Bereich.',
+				desc: 'Legt fest, wo Put First Things First nach Aufgaben sucht. „Gesamter Vault" durchsucht alle Notizen; „Bestimmter Ordner" begrenzt die Suche auf einen Bereich.',
 				optionAll: 'Gesamter Vault',
 				optionFolder: 'Bestimmter Ordner',
 			},
 			taskFolder: {
 				name: 'Ordner',
-				desc: 'Nur Aufgaben in diesem Ordner (und seinen Unterordnern) werden in Focus First angezeigt.',
+				desc: 'Nur Aufgaben in diesem Ordner (und seinen Unterordnern) werden in Put First Things First angezeigt.',
 				placeholder: 'z.B. Projekte/Arbeit',
 				error: 'Bitte einen Ordner auswählen.',
 			},
@@ -744,12 +845,29 @@ const translations: Record<Lang, Translations> = {
 				name: 'Größen für geringen Aufwand',
 				desc: 'Welche Aufgabengrößen auf der Aufwand-Achse als "geringer Aufwand" zählen. Ungeschätzte Aufgaben zählen immer als hoher Aufwand.',
 			},
-			futureTasks: {
-				name: 'Noch nicht gestartete Aufgaben',
-				desc: 'Wie mit Aufgaben umgegangen wird, deren Startdatum (🛫) oder geplantes Datum (⏳) noch in der Zukunft liegt — sie sind noch nicht bearbeitbar. Das Fälligkeitsdatum bestimmt weiterhin Dringlichkeit und Einordnung.',
-				optionShow: 'Anzeigen',
-				optionDim: 'Abschwächen',
-				optionHide: 'Ausblenden',
+			progressGroupHeading: 'Fortschrittsnotizen',
+			staleDays: {
+				name: 'Veraltet nach (Tagen)',
+				desc: 'Eine Aufgabe, deren letzte Fortschrittsnotiz älter als diese Anzahl Tage ist, wird auf ihrer Karte als veraltet markiert — so fallen die auf, die du nicht mehr anfasst.',
+				error: 'Bitte eine ganze Zahl von Tagen eingeben (0 oder mehr).',
+			},
+			progressHeading: {
+				name: 'Überschrift des Fortschrittsabschnitts',
+				desc: 'Verlinkt eine Aufgabe auf eine eigene Notiz, werden ihre Fortschrittsnotizen dort unter dieser Überschrift geführt (wird am Ende der Notiz angelegt, falls sie fehlt).',
+			},
+			notesFolder: {
+				name: 'Ordner für Aufgaben-Notizen',
+				desc: '„Eigene Notiz geben" legt die Notiz hier an. Leer lassen, um sie neben der Notiz mit der Aufgabe anzulegen.',
+				placeholder: 'z. B. Aufgaben/Notizen',
+			},
+			archiveFolder: {
+				name: 'Archivordner',
+				desc: 'Beim Archivieren wird die Notiz der Aufgabe hierher verschoben. Leer lassen, um die Aufgabe nur abzuhaken und die Notiz zu belassen.',
+				placeholder: 'z. B. Archiv',
+			},
+			reviewHeading: {
+				name: 'Überschrift des Rückblick-Abschnitts',
+				desc: 'Beim Archivieren wird ein leerer Abschnitt mit dieser Überschrift ergänzt — als Platz für das, was erledigt wurde und was beim nächsten Mal anders laufen soll. Leer lassen, um das zu überspringen.',
 			},
 			quickAddHeading: 'Schnell hinzufügen',
 			quickAddTarget: {
@@ -762,6 +880,24 @@ const translations: Record<Lang, Translations> = {
 				name: 'Inbox-Notiz',
 				desc: 'Pfad zur Notiz, die schnell hinzugefügte Aufgaben erhält, wenn „Aufgaben hinzufügen zu" auf die Inbox gesetzt ist. Wird erstellt, falls nicht vorhanden.',
 				placeholder: 'Inbox.md',
+			},
+			calendarHeading: 'Calendar-Plugin',
+			calendarEnabled: {
+				name: 'Aufgaben im Calendar-Plugin anzeigen',
+				desc: 'Ergänzt Punkte in den Tageszellen des Monatsrasters vom Calendar-Plugin. Ohne Wirkung, wenn dieses Plugin nicht installiert ist.',
+			},
+			calendarShowDue: {
+				name: 'Fälligkeitsdaten markieren',
+				desc: 'Ein gefüllter Punkt in der Farbe des Quadranten an dem Tag, an dem eine Aufgabe fällig ist. Bereits vergangene Tage werden als überfällig markiert.',
+			},
+			calendarShowProgress: {
+				name: 'Fortschrittsnotizen markieren',
+				desc: 'Ein hohler Punkt an jedem Tag, an dem eine Fortschrittsnotiz geschrieben wurde — so zeigt der Monat, was sich tatsächlich bewegt hat.',
+			},
+			calendarMaxDots: {
+				name: 'Höchstzahl Punkte pro Tag',
+				desc: 'Ein voller Tag wird auf so viele Punkte begrenzt, damit die Zelle lesbar bleibt; die vollständige Anzahl bleibt als Datenattribut an der Zelle.',
+				error: 'Bitte eine ganze Zahl ab 1 eingeben.',
 			},
 			matrixDesc: 'Diese Regeln bestimmen, wie Aufgaben anhand von Fälligkeitsdatum und Priorität automatisch in Quadranten eingeordnet werden.',
 			quadrantsHeading: 'Quadranten',
@@ -790,7 +926,7 @@ const translations: Record<Lang, Translations> = {
 			resetHeading: 'Zurücksetzen',
 			resetAll: {
 				name: 'Alle Einstellungen zurücksetzen',
-				desc: 'Setzt alle Focus-First-Einstellungen auf ihre Standardwerte zurück. Dies kann nicht rückgängig gemacht werden.',
+				desc: 'Setzt alle Put-First-Things-First-Einstellungen auf ihre Standardwerte zurück. Dies kann nicht rückgängig gemacht werden.',
 				button: 'Auf Standardwerte zurücksetzen',
 			},
 			toggleSection: 'Diesen Abschnitt ein- oder ausklappen',
@@ -798,11 +934,35 @@ const translations: Record<Lang, Translations> = {
 		groups: {
 			noPriority: 'Keine Priorität',
 			overdue: 'Überfällig',
-			today: 'Heute',
-			thisWeek: 'Nächste 7 Tage',
-			upcoming: 'Nächste 14 Tage',
+			soon: 'Fällig in {days} Tagen',
 			later: 'Später',
 			noDate: 'Kein Datum',
+		},
+		progress: {
+			title: 'Fortschritt',
+			none: 'Noch keine Notizen',
+			empty: 'Noch nichts notiert. Halte fest, was passiert ist — oder was schiefgeht.',
+			placeholder: 'Was ist passiert?',
+			alert: 'Als Warnung markieren (⚠)',
+			add: 'Notiz hinzufügen',
+			lastNote: 'Letzte Notiz vor {days} T',
+			lastNoteToday: 'Letzte Notiz heute',
+			lastNoteUndated: 'Letzte Notiz ohne Datum',
+			openEntry: 'Diese Zeile in der Notiz öffnen',
+			stale: 'Die Notiz hat sich geändert, seit diese Seite geöffnet wurde — aktualisieren und erneut versuchen.',
+			home: 'Notiz',
+			openHome: '{name} öffnen',
+			promote: 'Dieser Aufgabe eine eigene Notiz geben',
+			promoteHint: 'Für Aufgaben, die Wochen dauern: eine eigene Notiz zum Verknüpfen und für den Fortschritt.',
+			promoted: '{name} angelegt und mit der Aufgabe verknüpft',
+			promotedLinked: 'Aufgabe mit der vorhandenen Notiz {name} verknüpft',
+			promoteNoTitle: 'Die Aufgabe hat keinen Text, nach dem eine Notiz benannt werden könnte.',
+			archive: 'Archivieren',
+			archived: 'Aufgabe erledigt — Notiz nach {folder} verschoben',
+			archivedNoFolder: 'Aufgabe erledigt — Notiz bleibt an ihrem Platz (kein Archivordner gesetzt)',
+			archiveNeedsNote: 'Gib der Aufgabe zuerst eine eigene Notiz; nur Aufgaben mit Notiz lassen sich archivieren.',
+			archiveTargetExists: 'Aufgabe erledigt, aber im Archivordner gibt es schon eine Notiz mit diesem Namen — nichts verschoben.',
+			notATask: 'Der Cursor steht nicht auf einer Aufgabenzeile.',
 		},
 		tasksBlock: {
 			missing: 'Für diesen Block muss das Tasks-Plugin installiert und aktiviert sein.',

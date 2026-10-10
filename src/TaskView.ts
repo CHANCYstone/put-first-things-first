@@ -1,25 +1,19 @@
-import { ItemView, WorkspaceLeaf, TFile, setIcon, debounce } from 'obsidian';
+import { ItemView, WorkspaceLeaf, TFile, setIcon, debounce, Notice, Menu } from 'obsidian';
 import FocusFirstPlugin from './main';
-import { scanTasks, TaskItem, isFutureTask, isHiddenTask } from './taskScanner';
-import { classifyTasks, MatrixTask, Quadrant } from './matrixClassifier';
-import { AxisMode, TaskSize, sizeTagList } from './settings';
+import { scanTasks, TaskItem, isHiddenTask } from './taskScanner';
+import { Quadrant } from './matrixClassifier';
+import { TaskSize, sizeTagList } from './settings';
 import { isTasksPluginEnabled } from './tasksPlugin';
 import { t } from './i18n';
 import { renderTaskItem, taskTitle } from './taskRenderer';
 import { TASK_PREFIX_RE } from './tasksFormat';
-import { sortTasks, groupKey, groupLabel, groupOrder, dueBucket, DueBucket } from './taskSorting';
-import { renderNoMatches, renderOnboarding, renderEliminateHint } from './taskEmptyStates';
-import { makeDropTarget, makeValueEffortDropTarget } from './taskDragDrop';
+import { dueBucket, dueBucketLabel, DueBucket, DUE_BUCKETS } from './taskSorting';
+import { BoardLane, BOARD_LABELS, boardLane, boardLine, focusCapacity, moveBoardTask, setFocusCapacity } from './workBoard';
+import { BoardDragSort } from './boardDragSort';
+import { showUndoNotice } from './undo';
+import { commitTask, isInboxConfigured } from './quickAdd';
 
-export const FOCUS_FIRST_VIEW_TYPE = 'focus-first-view';
-
-const QUADRANT_ORDER: Quadrant[] = ['do', 'schedule', 'delegate', 'eliminate'];
-
-// Every bucket dueBucket() can produce must be offered, otherwise tasks in the
-// missing one silently vanish as soon as any date filter is active.
-const DATE_FILTER_OPTIONS: DueBucket[] = [
-	'__overdue__', '__today__', '__thisweek__', '__upcoming__', '__later__', '__nodate__',
-];
+export const FOCUS_FIRST_VIEW_TYPE = 'put-first-things-first-view';
 
 const SIZE_FILTER_OPTIONS: TaskSize[] = ['small', 'medium', 'large'];
 
@@ -50,6 +44,34 @@ export function focusKeyResolver(tasks: TaskItem[]): (filePath: string, lineNumb
 	// Unknown position (a task dragged in from outside the focus list) resolves to
 	// '', which reorderFocus rejects because it is not among the shown keys.
 	return (filePath, lineNumber) => byPosition.get(`${filePath}::${lineNumber}`) ?? '';
+}
+
+/**
+ * Caps a task list at the height of its first `rows` task rows (group headers
+ * in between included), so a long quadrant shows about that many and scrolls
+ * inside itself for the rest — the heading's count stays the honest total. The
+ * rows are measured after render, so one-line and two-line cards (with a latest
+ * note) both fit exactly. 0 leaves the list uncapped; so does a list that is
+ * not laid out (no measurable heights).
+ */
+export function capListHeight(list: HTMLElement, rows: number): void {
+	list.classList.remove('is-capped');
+	list.setCssProps({ '--ff-list-max-height': '' });
+	if (rows <= 0) return;
+	let counted = 0;
+	let height = 0;
+	for (const child of Array.from(list.children)) {
+		const el = child as HTMLElement;
+		const h = el.offsetHeight;
+		if (!h) return;
+		height += h;
+		if (el.classList.contains('focus-first-task-item')) counted++;
+		if (counted === rows) break;
+	}
+	if (counted < rows) return; // everything fits: nothing to cap
+	if (list.children.length === counted) return; // exactly the limit: no scrollbar needed
+	list.classList.add('is-capped');
+	list.setCssProps({ '--ff-list-max-height': `${height}px` });
 }
 
 export class FocusFirstView extends ItemView {
@@ -89,36 +111,43 @@ export class FocusFirstView extends ItemView {
 		await this.refresh();
 	}
 
+	private boardDrag = new BoardDragSort(
+		(task, lane, anchor, after) => { void this.moveTo(task, lane, anchor, after); },
+		() => { void this.refresh(); },
+	);
+
+	async onClose(): Promise<void> {
+		this.boardDrag.reset();
+	}
+
 	async refresh(): Promise<void> {
-		this.tasks = await scanTasks(this.app, this.plugin.settings);
+		if (this.boardDrag.active) return;
+		const tasks = await scanTasks(this.app, this.plugin.settings);
+		if (this.boardDrag.active) return;
+		this.tasks = tasks;
+		const scroll = Array.from(this.contentEl.querySelectorAll?.('.focus-first-task-list') ?? []).map(list => list.scrollTop);
+		const top = this.contentEl.scrollTop;
 		this.render();
+		Array.from(this.contentEl.querySelectorAll?.('.focus-first-task-list') ?? []).forEach((list, index) => { list.scrollTop = scroll[index] ?? 0; });
+		this.contentEl.scrollTop = top;
 	}
 
 	private render(): void {
+		if (this.boardDrag.active) return;
+		this.boardDrag.reset();
 		const { contentEl } = this;
 		contentEl.empty();
 
 		const header = contentEl.createDiv({ cls: 'focus-first-header' });
 		header.createEl('h4', { text: t().view.title });
 		const headerActions = header.createDiv({ cls: 'focus-first-header-actions' });
+		const logBtn = headerActions.createEl('button', { text: 'Daily log' });
+		logBtn.addEventListener('click', () => { void this.plugin.openDailyLog(); });
+		const planningBtn = headerActions.createEl('button', { text: '每日规划' });
+		planningBtn.addEventListener('click', () => { void this.plugin.activatePlanningView(); });
+		const dailyBtn = headerActions.createEl('button', { text: '今日工作' });
+		dailyBtn.addEventListener('click', () => { void this.plugin.activateDailyView(); });
 
-		// Axis selector (#36): a compact dropdown in the header, so switching the
-		// matrix preset costs no extra vertical space.
-		const axisSelect = headerActions.createEl('select', { cls: 'dropdown focus-first-axis-select' });
-		axisSelect.setAttribute('aria-label', String(t().view.axes.label));
-		const axisPresets: { mode: AxisMode; label: string }[] = [
-			{ mode: 'eisenhower', label: String(t().view.axes.eisenhower) },
-			{ mode: 'valueEffort', label: String(t().view.axes.valueEffort) },
-		];
-		for (const preset of axisPresets) {
-			axisSelect.createEl('option', { text: preset.label, attr: { value: preset.mode } });
-		}
-		axisSelect.value = this.plugin.settings.axisMode;
-		axisSelect.addEventListener('change', () => {
-			this.plugin.settings.axisMode = axisSelect.value as AxisMode;
-			void this.plugin.saveSettings();
-			this.render();
-		});
 
 		const searchToggleBtn = headerActions.createEl('button', {
 			cls: 'mod-cta focus-first-search-toggle',
@@ -213,22 +242,15 @@ export class FocusFirstView extends ItemView {
 
 	private renderFilterPanel(panel: HTMLElement, onChange: () => void): void {
 		panel.empty();
-		const g = t().groups;
-		const labels: Record<DueBucket, string> = {
-			__overdue__:  g.overdue,
-			__today__:    g.today,
-			__thisweek__: g.thisWeek,
-			__upcoming__: g.upcoming,
-			__later__:    g.later,
-			__nodate__:   g.noDate,
-		};
+		// Every bucket dueBucket() can produce is offered, otherwise tasks in a
+		// missing one would silently vanish as soon as any date filter is active.
 		const dateGroup = panel.createDiv({ cls: 'focus-first-filter-group' });
-		for (const bucket of DATE_FILTER_OPTIONS) {
+		for (const bucket of DUE_BUCKETS) {
 			const label = dateGroup.createEl('label', { cls: 'focus-first-filter-option' });
 			const cb = label.createEl('input');
 			cb.type = 'checkbox';
 			cb.checked = this.activeDateFilters.has(bucket);
-			label.createSpan({ text: labels[bucket] });
+			label.createSpan({ text: dueBucketLabel(bucket, this.plugin.settings.urgencyDays) });
 			cb.addEventListener('change', () => {
 				if (cb.checked) this.activeDateFilters.add(bucket);
 				else this.activeDateFilters.delete(bucket);
@@ -263,7 +285,7 @@ export class FocusFirstView extends ItemView {
 
 	private passesDateFilter(task: TaskItem): boolean {
 		if (this.activeDateFilters.size === 0) return true;
-		return this.activeDateFilters.has(dueBucket(task));
+		return this.activeDateFilters.has(dueBucket(task, this.plugin.settings.urgencyDays));
 	}
 
 	private passesSizeFilter(task: TaskItem): boolean {
@@ -293,222 +315,171 @@ export class FocusFirstView extends ItemView {
 		}
 	}
 
+	private laneTasks(lane: BoardLane): TaskItem[] {
+		const keyOf = focusKeyResolver(this.tasks);
+		const order = lane === 'focus' ? this.plugin.settings.focusOrder : (this.plugin.settings.boardOrder ?? []);
+		const rank = (task: TaskItem) => {
+			const i = order.indexOf(keyOf(task.file.path, task.lineNumber));
+			return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+		};
+		return this.tasks.filter(task => !task.completed && !isHiddenTask(task, this.plugin.settings)
+			&& boardLane(task, this.plugin.settings) === lane).sort((a,b) => rank(a) - rank(b));
+	}
+
+	private matchesFilters(task: TaskItem): boolean {
+		const query = this.searchQuery.toLowerCase();
+		return (!query || task.line.toLowerCase().includes(query) || task.file.basename.toLowerCase().includes(query))
+			&& this.passesDateFilter(task) && this.passesSizeFilter(task);
+	}
+
 	private renderFocusTasks(container: HTMLElement): void {
 		container.empty();
-		const focusTag = this.plugin.settings.focusTag.trim().toLowerCase();
-		if (!focusTag) { container.classList.add('focus-first-hidden'); return; }
-
-		const focusTasks = this.tasks.filter(
-			(t) => !t.completed
-				&& t.tags.some((tag) => tag.toLowerCase() === focusTag)
-				&& !isHiddenTask(t, this.plugin.settings)
-				&& (this.plugin.settings.futureTasks !== 'hide' || !isFutureTask(t)),
-		);
-
-		if (focusTasks.length === 0) { container.classList.add('focus-first-hidden'); return; }
 		container.classList.remove('focus-first-hidden');
+		container.classList.add('pftf-focus-board');
+		const tasks = this.laneTasks('focus');
+		const used = this.tasks.filter(task => !task.completed && boardLane(task, this.plugin.settings) === 'focus').length;
+		const capacity = focusCapacity(this.plugin.settings.focusTargetCount);
+		this.renderHeading(container, 'Focus', { subtitle: '把注意力留给最重要的事' });
+		const controls = container.createDiv({ cls: 'pftf-capacity-controls' });
+		controls.createSpan({ text: `${used} / ${capacity}`, cls: `pftf-capacity-count${used >= capacity ? ' is-full' : ''}` });
+		const select = controls.createEl('select', { attr: { 'aria-label': 'Focus 容量' } });
+		for (const n of [1, 2, 3]) select.createEl('option', { text: `${n} 个位置`, attr: { value: String(n) } });
+		select.value = String(capacity);
+		select.addEventListener('change', () => {
+			void setFocusCapacity(this.app, this.plugin.settings, Number(select.value))
+				.then(() => this.plugin.saveSettings()).then(() => this.plugin.refreshViews())
+				.catch((error: Error) => { new Notice(error.message); select.value = String(capacity); });
+		});
+		const list = container.createEl('ul', { cls: 'focus-first-task-list pftf-focus-slots' });
+		list.setCssProps({ '--pftf-focus-capacity': String(capacity) });
+		tasks.filter(task => this.matchesFilters(task)).forEach((task, index) => this.renderBoardTask(list, task, 'focus', index + 1));
+		for (let i = used; i < capacity; i++) list.createEl('li', { cls: 'pftf-focus-empty-slot', text: `0${i + 1}  拖入一个重点事项` });
+		if (used > tasks.length) container.createDiv({ cls: 'pftf-board-notice', text: `另有 ${used - tasks.length} 项被隐藏，仍占用 Focus 容量。` });
+		if (used > capacity) container.createDiv({ cls: 'pftf-board-notice', text: `现有 ${used} 项已完整保留。请移出 ${used - capacity} 项，让 Focus 回到容量内。` });
+		if (tasks.length > 0 && !tasks.some(task => this.matchesFilters(task))) container.createDiv({ cls: 'pftf-board-notice', text: '没有符合筛选条件的 Focus 事项，容量仍按全部事项计算。' });
+		this.wireBoardDrop(container, 'focus');
+	}
 
-		// Focus tasks render through the same path as quadrant tasks (classified to
-		// attach the `quadrant` field), but ordered most-important-first and numbered
-		// so daily-planning rituals (Eat the Frog, Ivy Lee, MITs) have structure — #1
-		// is the natural "frog" (#34).
-		const byQuadrant = classifyTasks(focusTasks, this.plugin.settings);
-		const ordered: MatrixTask[] = [];
-		for (const q of QUADRANT_ORDER) ordered.push(...byQuadrant[q]);
-
-		// Base order is most-important-first (#34). A manual drag order (#37), stored
-		// as stable per-task keys, then overrides it: tasks the user has placed by hand
-		// come first in that order; anything not yet placed keeps the importance order
-		// and follows (Array.prototype.sort is stable, so ties preserve it).
-		const keyOf = focusKeyResolver(focusTasks);
-		const manualOrder = this.plugin.settings.focusOrder;
-		const rank = (mt: MatrixTask) => {
-			const i = manualOrder.indexOf(keyOf(mt.file.path, mt.lineNumber));
-			return i === -1 ? Number.MAX_SAFE_INTEGER : i;
-		};
-		const sorted = sortTasks(ordered, { primary: 'priority', secondary: 'dueDate' })
-			.sort((a, b) => rank(a) - rank(b));
-
-		this.renderHeading(container, String(t().view.focusSectionTitle), { count: sorted.length });
-
-		const target = this.plugin.settings.focusTargetCount;
-		const keys = sorted.map((mt) => keyOf(mt.file.path, mt.lineNumber));
-		const list = container.createEl('ul', { cls: 'focus-first-task-list' });
-		sorted.forEach((mt, i) => {
-			// A subtle divider marks where the shortlist runs past the daily target.
-			if (target > 0 && i === target) {
-				list.createEl('li', {
-					cls: 'focus-first-focus-target-line',
-					text: String(t().view.focusOverTarget),
-				});
+	private async moveTo(task: TaskItem, lane: BoardLane, anchor?: TaskItem, after = false): Promise<void> {
+		try {
+			const keyOf = focusKeyResolver(this.tasks);
+			const key = keyOf(task.file.path, task.lineNumber);
+			const sameLane = boardLane(task, this.plugin.settings) === lane;
+			const snapshot = sameLane ? undefined : await moveBoardTask(this.app, this.plugin.settings, task, lane);
+			if (anchor) {
+				const keys = this.laneTasks(lane).map(t => keyOf(t.file.path, t.lineNumber)).filter(k => k !== key);
+				const index = keys.indexOf(keyOf(anchor.file.path, anchor.lineNumber));
+				if (index >= 0) keys.splice(index + (after ? 1 : 0), 0, key);
+				else keys.push(key);
+				const oldFocus = this.plugin.settings.focusOrder;
+				const oldBoard = this.plugin.settings.boardOrder;
+				if (lane === 'focus') this.plugin.settings.focusOrder = keys;
+				else this.plugin.settings.boardOrder = [...keys, ...(this.plugin.settings.boardOrder ?? []).filter(k => !keys.includes(k))];
+				try { await this.plugin.saveSettings(); } catch (error) {
+					this.plugin.settings.focusOrder = oldFocus;
+					this.plugin.settings.boardOrder = oldBoard;
+					throw error;
+				}
 			}
-			// Focus tasks never show the "why here" reason (#31): they are here
-			// because of the focus tag, not the quadrant classification.
-			const li = this.renderTask(list, mt, { suppressWhyHere: true, position: i + 1 });
-			this.makeFocusReorderTarget(li, keyOf(mt.file.path, mt.lineNumber), keys, keyOf);
+			if (snapshot) showUndoNotice(this.app, `已移到 ${BOARD_LABELS[lane]}`, snapshot);
+			await this.refresh();
+		} catch (error) {
+			new Notice(error instanceof Error ? error.message : '移动失败，请重试。');
+			await this.refresh();
+		}
+	}
+
+	private wireBoardDrop(el: HTMLElement, lane: BoardLane, anchor?: TaskItem): void {
+		el.addEventListener('dragenter', event => { this.boardDrag.over(event, el, lane); });
+		el.addEventListener('dragover', event => { if (this.boardDrag.over(event, el, lane)) return; event.preventDefault(); event.stopPropagation(); el.classList.add('is-drag-over'); });
+		el.addEventListener('dragleave', event => { if (!el.contains(event.relatedTarget as Node)) el.classList.remove('is-drag-over'); });
+		el.addEventListener('drop', event => {
+			if (this.boardDrag.active) { this.boardDrag.over(event, el, lane); this.boardDrag.drop(event); return; }
+			event.preventDefault(); event.stopPropagation(); el.classList.remove('is-drag-over');
+			try {
+				const data = JSON.parse(event.dataTransfer?.getData('application/json') ?? '{}') as { filePath?: unknown; lineNumber?: unknown; line?: unknown };
+				const task = this.tasks.find(t => t.file.path === data.filePath && t.lineNumber === data.lineNumber && t.line === data.line);
+				if (!task || task === anchor) return;
+				const rect = el.getBoundingClientRect();
+				void this.moveTo(task, lane, anchor, event.clientY > rect.top + rect.height / 2);
+			} catch { /* Ignore foreign drag payloads. */ }
 		});
 	}
 
-	/**
-	 * Wires a focus row as a drop target for manual reordering (#37): dropping a
-	 * dragged focus task onto this row places it just before or after this one,
-	 * depending on which half of the row the pointer is over — so every gap,
-	 * including above the first row and below the last, is reachable.
-	 */
-	private makeFocusReorderTarget(
-		li: HTMLElement,
-		targetKey: string,
-		keys: string[],
-		keyOf: (filePath: string, lineNumber: number) => string,
-	): void {
-		// True when the pointer sits in the lower half of the row → drop after it.
-		const isAfter = (e: DragEvent): boolean => {
-			const rect = li.getBoundingClientRect();
-			return e.clientY > rect.top + rect.height / 2;
-		};
-		const clearIndicator = () => li.classList.remove('focus-first-drop-before', 'focus-first-drop-after');
-		li.addEventListener('dragover', (e) => {
-			e.preventDefault();
-			const after = isAfter(e);
-			li.classList.toggle('focus-first-drop-after', after);
-			li.classList.toggle('focus-first-drop-before', !after);
+	private renderBoardTask(list: HTMLElement, task: TaskItem, lane: BoardLane, position?: number): void {
+		const quadrant: Quadrant = lane === 'urgent' ? 'do' : lane === 'delegate' ? 'delegate' : 'schedule';
+		const li = renderTaskItem(list, { ...task, quadrant, manual: true }, this.app, this.plugin.settings, {
+			suppressWhyHere: true, position, boardMode: true,
+			onToggleFocus: () => { void this.moveTo(task, lane === 'focus' ? 'work' : 'focus'); },
 		});
-		li.addEventListener('dragleave', (e) => {
-			if (!li.contains(e.relatedTarget as Node)) clearIndicator();
+		const move = li.createEl('button', { cls: 'pftf-card-move', attr: { 'aria-label': `移动 ${taskTitle(task.line)}`, title: '移动到…' } });
+		setIcon(move, 'move');
+		move.addEventListener('click', event => {
+			event.stopPropagation();
+			const menu = new Menu();
+			for (const target of ['focus', 'work', 'urgent', 'delegate'] as BoardLane[]) {
+				if (target !== lane) menu.addItem(item => item.setTitle(`移到 ${BOARD_LABELS[target]}`).onClick(() => { void this.moveTo(task, target); }));
+			}
+			menu.showAtMouseEvent(event);
 		});
-		li.addEventListener('drop', (e) => {
-			e.preventDefault();
-			clearIndicator();
-			const raw = e.dataTransfer?.getData('application/json');
-			if (!raw) return;
-			let data: unknown;
-			try { data = JSON.parse(raw); } catch { return; }
-			if (typeof data !== 'object' || data === null) return;
-			const { filePath, lineNumber } = data as { filePath?: unknown; lineNumber?: unknown };
-			if (typeof filePath !== 'string' || typeof lineNumber !== 'number') return;
-			this.reorderFocus(keys, keyOf(filePath, lineNumber), targetKey, isAfter(e));
-		});
+		this.boardDrag.bind(li, task, lane);
+		this.wireBoardDrop(li, lane, task);
 	}
 
-	/**
-	 * Rebuilds the manual focus order by moving `draggedKey` to just before (or
-	 * after, when `after` is true) `targetKey`, then persists it. Rebuilding from
-	 * the currently-shown keys keeps `focusOrder` pruned to tasks in focus.
-	 */
-	private reorderFocus(keys: string[], draggedKey: string, targetKey: string, after: boolean): void {
-		if (draggedKey === targetKey) return;
-		// Only reorder within the focus list — ignore drops from elsewhere.
-		if (!keys.includes(draggedKey)) return;
-		const without = keys.filter((k) => k !== draggedKey);
-		const insertAt = without.indexOf(targetKey);
-		if (insertAt === -1) return;
-		without.splice(after ? insertAt + 1 : insertAt, 0, draggedKey);
-		this.plugin.settings.focusOrder = without;
-		void this.plugin.saveSettings();
-		this.render();
-	}
-
-	private renderMatrix(contentEl: HTMLElement, container: HTMLElement): void {
+	private renderMatrix(_contentEl: HTMLElement, container: HTMLElement): void {
 		container.empty();
-
-		const query = this.searchQuery.toLowerCase();
-		const open = this.tasks
-			.filter((task) => !task.completed)
-			.filter((task) => !isHiddenTask(task, this.plugin.settings))
-			.filter((task) => {
-				if (!query) return true;
-				const text = task.line.replace(TASK_PREFIX_RE, '').toLowerCase();
-				return text.includes(query) || task.file.basename.toLowerCase().includes(query);
-			})
-			.filter((task) => this.passesDateFilter(task))
-			.filter((task) => this.passesSizeFilter(task))
-			.filter((task) => this.plugin.settings.futureTasks !== 'hide' || !isFutureTask(task));
-
-		const filtersActive = query !== '' || this.activeDateFilters.size > 0 || this.activeSizeFilters.size > 0;
-
-		if (open.length === 0) {
-			if (filtersActive) {
-				renderNoMatches(container, () => {
-					this.searchQuery = '';
-					this.activeDateFilters.clear();
-					this.activeSizeFilters.clear();
-					this.render();
-				});
-			} else {
-				renderOnboarding(container);
-			}
-			return;
-		}
-
-		const quadrants = classifyTasks(open, this.plugin.settings);
-		const eisenhower = this.plugin.settings.axisMode === 'eisenhower';
-		// Quadrant labels adapt to the active axes; colours and sort are shared slots.
-		const quadrantLabels = eisenhower ? t().view.quadrants : t().view.quadrantsValueEffort;
-
-		// Degenerate case (Eisenhower only): tasks exist but none are urgent or
-		// important, so everything is in Eliminate. Explain why instead of leaving
-		// the user with a matrix that looks broken. In Value/Effort the same pile-up
-		// (all Time Sinks) has a different meaning, so the hint doesn't apply.
-		if (eisenhower && quadrants.do.length === 0 && quadrants.schedule.length === 0
-			&& quadrants.delegate.length === 0 && quadrants.eliminate.length > 0) {
-			renderEliminateHint(container);
-		}
-
-		const matrix = container.createDiv({ cls: 'focus-first-matrix' });
-
-		for (const key of QUADRANT_ORDER) {
-			const tasks = quadrants[key];
-			const quadrant = quadrantLabels[key];
-
-			const cell = matrix.createDiv({ cls: `focus-first-quadrant focus-first-quadrant--${key}` });
-			cell.setCssProps({ '--quadrant-color': this.plugin.settings.quadrants[key].color });
-			// Drag-to-reclassify: Eisenhower writes the quadrant tag; Value/Effort
-			// writes the value override tag (#highvalue/#lowvalue) plus the size tag
-			// for the target effort.
-			if (eisenhower) makeDropTarget(cell, key, this.app, this.plugin.settings);
-			else makeValueEffortDropTarget(cell, key, this.app, this.plugin.settings);
-			this.renderHeading(cell, quadrant.title, { subtitle: quadrant.subtitle, count: tasks.length });
-
-			if (tasks.length === 0) {
-				const emptyEl = cell.createDiv({ cls: 'focus-first-quadrant-empty' });
-				emptyEl.createSpan({ cls: 'focus-first-quadrant-empty-icon' });
-				emptyEl.createEl('p', { text: quadrant.emptyState, cls: 'focus-first-quadrant-empty-text' });
-				continue;
-			}
-
+		const board = container.createDiv({ cls: 'pftf-work-board' });
+		const subtitles = { work: '所有待推进的工作 · 拖动调整顺序', urgent: '需要立刻处理', delegate: '交给他人 · 持续跟进' };
+		for (const lane of ['work', 'urgent', 'delegate'] as const) {
+			const all = this.laneTasks(lane);
+			const tasks = all.filter(task => this.matchesFilters(task));
+			const cell = board.createDiv({ cls: `pftf-board-lane pftf-board-lane--${lane}` });
+			this.renderHeading(cell, BOARD_LABELS[lane], { subtitle: subtitles[lane], count: all.length });
+			this.wireBoardDrop(cell, lane);
 			const list = cell.createEl('ul', { cls: 'focus-first-task-list' });
-			const sorted = sortTasks(tasks, this.plugin.settings.quadrants[key].sort);
-
-			if (this.plugin.settings.groupByPrimary) {
-				const primaryField = this.plugin.settings.quadrants[key].sort.primary;
-				const groups = new Map<string, MatrixTask[]>();
-				for (const task of sorted) {
-					const gk = groupKey(task, primaryField);
-					if (!groups.has(gk)) groups.set(gk, []);
-					groups.get(gk)!.push(task);
-				}
-				const sortedKeys = [...groups.keys()].sort(groupOrder(primaryField));
-				for (const gk of sortedKeys) {
-					this.renderTaskGroup(list, groupLabel(gk, primaryField), groups.get(gk)!);
-				}
-			} else {
-				for (const task of sorted) {
-					this.renderTask(list, task);
-				}
-			}
+			for (const task of tasks) this.renderBoardTask(list, task, lane);
+			if (!tasks.length) cell.createDiv({ cls: 'pftf-lane-empty', text: all.length ? '没有符合筛选条件的事项' : '拖入事项，或在下方添加' });
+			capListHeight(list, this.plugin.settings.quadrantLimit);
+			this.renderQuadrantAdd(cell.createDiv({ cls: 'focus-first-quadrant-add' }), lane === 'urgent' ? 'do' : lane === 'delegate' ? 'delegate' : 'schedule');
 		}
 	}
 
-	private renderTask(parent: HTMLElement, task: MatrixTask, opts: { suppressWhyHere?: boolean; position?: number } = {}): HTMLElement {
-		return renderTaskItem(parent, task, this.app, this.plugin.settings, opts);
+	/**
+	 * The ghost row at the foot of a quadrant: "+ Add here". A click turns it
+	 * into an input; Enter writes the task to the inbox, seeded so it lands in
+	 * this very quadrant (see quadrantAdd.ts); Escape, or leaving it empty, puts
+	 * the ghost row back. The input stays open after adding, for a run of tasks.
+	 */
+	private renderQuadrantAdd(row: HTMLElement, quadrant: Quadrant): void {
+		row.empty();
+		const btn = row.createEl('button', { cls: 'focus-first-quadrant-add-btn' });
+		setIcon(btn.createSpan({ cls: 'focus-first-quadrant-add-icon' }), 'plus');
+		btn.createSpan({ text: String(t().view.addHere) });
+		btn.addEventListener('click', () => {
+			if (!isInboxConfigured(this.plugin.settings)) { this.plugin.openQuickAdd(); return; }
+			row.empty();
+			const input = row.createEl('input', {
+				cls: 'focus-first-quadrant-add-input',
+				attr: { type: 'text', placeholder: String(t().view.addHerePlaceholder) },
+			});
+			const restore = () => this.renderQuadrantAdd(row, quadrant);
+			input.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape') { restore(); return; }
+				if (e.key !== 'Enter' || e.isComposing) return;
+				e.preventDefault();
+				const text = input.value.trim();
+				if (!text) { restore(); return; }
+				const lane = quadrant === 'do' ? 'urgent' : quadrant === 'delegate' ? 'delegate' : 'work';
+				const seeded = boardLine(`- [ ] ${text}`, lane, this.plugin.settings).replace(TASK_PREFIX_RE, '');
+				void commitTask(this.app, this.plugin.settings, seeded).then((result) => {
+					if (result !== 'added') return;
+					input.value = '';
+					void this.refresh();
+				});
+			});
+			input.addEventListener('blur', () => { if (!input.value.trim()) restore(); });
+			input.focus();
+		});
 	}
 
-	private renderTaskGroup(list: HTMLElement, label: string, tasks: MatrixTask[]): void {
-		const header = list.createEl('li', { cls: 'focus-first-group-header' });
-		header.createSpan({ text: label, cls: 'focus-first-group-header-label' });
-		header.createSpan({ cls: 'focus-first-group-header-line' });
-		for (const task of tasks) {
-			this.renderTask(list, task);
-		}
-	}
 }

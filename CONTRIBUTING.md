@@ -1,16 +1,16 @@
-# Contributing to Focus First
+# Contributing to Put First Things First
 
 Thanks for taking the time to contribute. This guide explains how to report
 issues, propose changes, and get a pull request merged.
 
 > [!important]
-> **Licensing note.** Focus First is licensed under the [MIT License](LICENSE).
+> **Licensing note.** Put First Things First is licensed under the [MIT License](LICENSE).
 > By submitting a contribution (issue, code, or documentation) you agree that
 > your contribution is provided under the same MIT License.
 
 ## Ways to contribute
 
-- **Report a bug** - open an [issue](https://github.com/christian-luger-at/obsidian-focus-first/issues).
+- **Report a bug** - open an [issue](../../issues).
 - **Request a feature** - open an issue describing the problem you want solved.
 - **Improve the docs** - fixes to the README, DEVELOPMENT.md, or in-code docs are welcome.
 - **Send code** - bug fixes and small, well-scoped features via pull request.
@@ -26,7 +26,7 @@ A good bug report includes:
 1. **What you did** - the steps to reproduce.
 2. **What you expected** to happen.
 3. **What actually happened** (screenshots or a short screen recording help a lot).
-4. **Environment** - Obsidian version, operating system, Focus First version, and
+4. **Environment** - Obsidian version, operating system, Put First Things First version, and
    whether the [Tasks plugin](https://obsidian.tasks.org/) is installed.
 5. A **minimal example** - one or two tasks that trigger the problem, if relevant.
 
@@ -110,4 +110,4 @@ need to bump versions or create tags - please leave `manifest.json`,
 ## Questions
 
 Not sure about something? Open an issue with the **question** label. Thanks for
-helping make Focus First better.
+helping make Put First Things First better.

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { scanTasks, isFutureTask, isHiddenTask, detectSize, TaskItem } from '../taskScanner';
+import { scanTasks, isHiddenTask, detectSize, TaskItem } from '../taskScanner';
 import { DEFAULT_SETTINGS, FocusFirstSettings } from '../settings';
 import { TFile } from './__mocks__/obsidian';
 
@@ -48,16 +48,21 @@ function makeApp(files: { path: string; lines: string[] }[]) {
 				const match = tFiles.find((f) => f.tFile.path === file.path);
 				if (!match) return null;
 				// Expose every line that looks like a task checkbox as a listItem
+				// Every list line is a listItem; only checkbox lines carry `task`.
+				// Indented lines are children: Obsidian sets `parent` to the nearest
+				// less-indented list line above (>= 0); top-level items get -1.
 				const listItems = match.lines.flatMap((line, idx) => {
-					// Matches `- [ ]` or `- [x]` or `- [X]`
-					const m = /^\s*- \[(.)\]/.exec(line);
+					const m = /^(\s*)- (?:\[(.)\])?/.exec(line);
 					if (!m) return [];
-					// Indented lines are subtasks: Obsidian sets `parent` to the parent
-					// line (>= 0); top-level items get a negative parent.
-					const indented = /^\s+/.test(line);
+					const indent = (m[1] ?? '').length;
+					let parent = -1;
+					for (let i = idx - 1; i >= 0 && indent > 0; i--) {
+						const above = /^(\s*)- /.exec(match.lines[i] ?? '');
+						if (above && (above[1] ?? '').length < indent) { parent = i; break; }
+					}
 					return [{
-						task: m[1],
-						parent: indented ? idx - 1 : -1,
+						task: m[2],
+						parent,
 						position: { start: { line: idx } },
 					}];
 				});
@@ -106,105 +111,98 @@ describe('due-date parsing', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Start / scheduled date parsing (issue #7)
+// Start / scheduled dates are not read
 // ---------------------------------------------------------------------------
 
-describe('start/scheduled date parsing', () => {
-	it('parses the 🛫 start date', async () => {
-		const app = makeApp([{ path: 'a.md', lines: ['- [ ] Task 🛫 2026-08-01'] }]);
-		const [task] = await scanTasks(app, makeSettings());
-		expect(ymd(task?.startDate)).toBe('2026-08-01');
-		expect(task?.scheduledDate).toBeUndefined();
-	});
-
-	it('parses the ⏳ scheduled date', async () => {
-		const app = makeApp([{ path: 'a.md', lines: ['- [ ] Task ⏳ 2026-08-02'] }]);
-		const [task] = await scanTasks(app, makeSettings());
-		expect(ymd(task?.scheduledDate)).toBe('2026-08-02');
-		expect(task?.startDate).toBeUndefined();
-	});
-
-	it('parses start, scheduled, and due dates together without confusing them', async () => {
+describe('start/scheduled dates', () => {
+	it('leaves a line carrying 🛫 and ⏳ parseable, reading only the due date', async () => {
 		const app = makeApp([{
 			path: 'a.md',
 			lines: ['- [ ] Task 🛫 2026-08-01 ⏳ 2026-08-02 📅 2026-08-03'],
 		}]);
 		const [task] = await scanTasks(app, makeSettings());
-		expect(ymd(task?.startDate)).toBe('2026-08-01');
-		expect(ymd(task?.scheduledDate)).toBe('2026-08-02');
 		expect(ymd(task?.dueDate)).toBe('2026-08-03');
+		expect(task).not.toHaveProperty('startDate');
+		expect(task).not.toHaveProperty('scheduledDate');
 	});
 });
 
 // ---------------------------------------------------------------------------
-// isFutureTask (issue #7)
+// Progress log — plain bullets under a task
 // ---------------------------------------------------------------------------
 
-describe('isFutureTask', () => {
-	const NOW = new Date('2026-07-07T12:00:00');
-	function make(overrides: Partial<TaskItem>): TaskItem {
-		return {
-			file: new TFile('a.md') as never,
-			line: '- [ ] Task',
-			lineNumber: 0,
-			completed: false,
-			tags: [],
-			...overrides,
-		};
-	}
-
-	it('is false when there is no start or scheduled date', () => {
-		expect(isFutureTask(make({ dueDate: new Date('2026-01-01') }), NOW)).toBe(false);
+describe('progress log scanning', () => {
+	it('attaches the plain bullets under a task as its log, in note order', async () => {
+		const app = makeApp([{
+			path: 'a.md',
+			lines: [
+				'- [ ] Build the bridge 📅 2026-09-20 ⏫',
+				'    - 2026-09-01 Called the village',
+				'    - 2026-09-03 ⚠ Still 200k short',
+				'- [ ] Other task',
+			],
+		}]);
+		const tasks = await scanTasks(app, makeSettings());
+		expect(tasks).toHaveLength(2);
+		expect(tasks[0]?.progress.map((e) => e.text)).toEqual(['Called the village', 'Still 200k short']);
+		expect(tasks[0]?.progress.map((e) => e.alert)).toEqual([false, true]);
+		expect(tasks[0]?.progress.map((e) => e.lineNumber)).toEqual([1, 2]);
+		expect(ymd(tasks[0]?.progress[1]?.date)).toBe('2026-09-03');
+		expect(tasks[1]?.progress).toEqual([]);
 	});
 
-	it('is true when the start date is after today', () => {
-		expect(isFutureTask(make({ startDate: new Date('2026-08-01') }), NOW)).toBe(true);
+	it('does not turn log bullets into tasks', async () => {
+		const app = makeApp([{
+			path: 'a.md',
+			lines: ['- [ ] Task', '    - 2026-09-01 A note'],
+		}]);
+		const tasks = await scanTasks(app, makeSettings());
+		expect(tasks).toHaveLength(1);
 	});
 
-	it('is true when the scheduled date is after today', () => {
-		expect(isFutureTask(make({ scheduledDate: new Date('2026-08-01') }), NOW)).toBe(true);
+	it('keeps subtasks and log entries apart', async () => {
+		const app = makeApp([{
+			path: 'a.md',
+			lines: ['- [ ] Parent', '    - [ ] Child task', '    - 2026-09-01 A note'],
+		}]);
+		const tasks = await scanTasks(app, makeSettings());
+		expect(tasks.map((t) => t.line.trim())).toEqual(['- [ ] Parent', '- [ ] Child task']);
+		expect(tasks[0]?.progress.map((e) => e.text)).toEqual(['A note']);
+		expect(tasks[1]?.progress).toEqual([]);
 	});
 
-	it('is false when start/scheduled dates are today or past', () => {
-		expect(isFutureTask(make({ startDate: new Date('2026-07-07') }), NOW)).toBe(false);
-		expect(isFutureTask(make({ scheduledDate: new Date('2026-06-01') }), NOW)).toBe(false);
+	it('still reads the log when subtasks are excluded', async () => {
+		const app = makeApp([{
+			path: 'a.md',
+			lines: ['- [ ] Parent', '    - [ ] Child task', '    - 2026-09-01 A note'],
+		}]);
+		const tasks = await scanTasks(app, makeSettings({ showSubtasks: false }));
+		expect(tasks).toHaveLength(1);
+		expect(tasks[0]?.progress.map((e) => e.text)).toEqual(['A note']);
 	});
 });
 
 // ---------------------------------------------------------------------------
-// isHiddenTask (issue #23) — hide, and hide-until via a return date
+// isHiddenTask — the hide tag is the single switch
 // ---------------------------------------------------------------------------
 
 describe('isHiddenTask', () => {
-	const NOW = new Date('2026-07-07T12:00:00');
 	const settings = makeSettings({ hideTag: '#hide' });
 	function make(overrides: Partial<TaskItem>): TaskItem {
-		return { file: new TFile('a.md') as never, line: '- [ ] Task', lineNumber: 0, completed: false, tags: [], ...overrides };
+		return { file: new TFile('a.md') as never, line: '- [ ] Task', lineNumber: 0, completed: false, tags: [], progress: [], ...overrides };
 	}
 
 	it('is false when the task has no hide tag', () => {
-		expect(isHiddenTask(make({ tags: [] }), settings, NOW)).toBe(false);
+		expect(isHiddenTask(make({ tags: [] }), settings)).toBe(false);
 	});
 
-	it('hides indefinitely when the hide tag has no return date', () => {
-		expect(isHiddenTask(make({ tags: ['#hide'] }), settings, NOW)).toBe(true);
-	});
-
-	it('stays hidden while the return date (🛫) is still in the future', () => {
-		expect(isHiddenTask(make({ tags: ['#hide'], startDate: new Date('2026-08-01') }), settings, NOW)).toBe(true);
-	});
-
-	it('reappears once the return date has passed', () => {
-		expect(isHiddenTask(make({ tags: ['#hide'], startDate: new Date('2026-07-01') }), settings, NOW)).toBe(false);
-		expect(isHiddenTask(make({ tags: ['#hide'], startDate: new Date('2026-07-07') }), settings, NOW)).toBe(false);
-	});
-
-	it('honours a future scheduled date (⏳) as the return date too', () => {
-		expect(isHiddenTask(make({ tags: ['#hide'], scheduledDate: new Date('2026-08-01') }), settings, NOW)).toBe(true);
+	it('is true when the task carries the hide tag, case-insensitively', () => {
+		expect(isHiddenTask(make({ tags: ['#hide'] }), settings)).toBe(true);
+		expect(isHiddenTask(make({ tags: ['#Hide'] }), settings)).toBe(true);
 	});
 
 	it('is false when no hide tag is configured', () => {
-		expect(isHiddenTask(make({ tags: ['#hide'] }), makeSettings({ hideTag: '' }), NOW)).toBe(false);
+		expect(isHiddenTask(make({ tags: ['#hide'] }), makeSettings({ hideTag: '' }))).toBe(false);
 	});
 });
 

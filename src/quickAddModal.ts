@@ -37,9 +37,9 @@ export class QuickAddModal extends Modal {
 		const chips = contentEl.createDiv({ cls: 'focus-first-quickadd-chips' });
 		const settings = this.plugin.settings;
 		this.addChip(chips, t().quickAdd.focus, settings.focusTag);
-		for (const key of ['do', 'schedule', 'delegate', 'eliminate'] as const) {
-			this.addChip(chips, t().view.quadrants[key].title, settings.quadrants[key].tag);
-		}
+		this.addChip(chips, '工作事项', '#pftf/work');
+		this.addChip(chips, 'Urgent', '#pftf/urgent');
+		this.addChip(chips, 'Delegate', '#pftf/delegate');
 
 		const controls = contentEl.createDiv({ cls: 'focus-first-quickadd-controls' });
 		const addBtn = controls.createEl('button', { text: t().quickAdd.add, cls: 'mod-cta' });
@@ -56,6 +56,8 @@ export class QuickAddModal extends Modal {
 				this.tags.delete(tag);
 				chip.classList.remove('is-active');
 			} else {
+				this.tags.clear();
+				Array.from(parent.children).forEach(el => el.classList.remove('is-active'));
 				this.tags.add(tag);
 				chip.classList.add('is-active');
 			}
@@ -70,7 +72,7 @@ export class QuickAddModal extends Modal {
 			this.input.value,
 			[...this.tags],
 		);
-		if (result === 'empty') return;
+		if (result === 'empty' || result === 'focus-full') return;
 		if (result === 'no-target') {
 			new Notice(t().quickAdd.noActiveNote);
 			return;

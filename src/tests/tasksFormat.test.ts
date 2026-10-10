@@ -3,8 +3,7 @@ import {
 	canonicalizeTaskLine,
 	addDaysToIso,
 	setDueDate,
-	shiftDueDate,
-	setStartDate,
+	clearDueDate,
 	setPriority,
 	setSize,
 } from '../tasksFormat';
@@ -94,34 +93,6 @@ describe('setDueDate', () => {
 	});
 });
 
-describe('setStartDate', () => {
-	it('appends a start date when there is none', () => {
-		expect(setStartDate('- [ ] Task #do', '2026-07-10')).toBe('- [ ] Task #do 🛫 2026-07-10');
-	});
-
-	it('replaces an existing start date, preserving other tokens', () => {
-		expect(setStartDate('- [ ] Task 🛫 2026-07-05 📅 2026-07-20', '2026-07-10')).toBe(
-			'- [ ] Task 🛫 2026-07-10 📅 2026-07-20',
-		);
-	});
-
-	it('preserves indentation and leaves non-task lines unchanged', () => {
-		expect(setStartDate('\t- [ ] Sub', '2026-07-10')).toBe('\t- [ ] Sub 🛫 2026-07-10');
-		expect(setStartDate('Just text', '2026-07-10')).toBe('Just text');
-	});
-});
-
-describe('shiftDueDate', () => {
-	it('shifts an existing due date by the given days', () => {
-		expect(shiftDueDate('- [ ] Task 📅 2026-07-07', 1)).toBe('- [ ] Task 📅 2026-07-08');
-		expect(shiftDueDate('- [ ] Task 📅 2026-07-07', 7)).toBe('- [ ] Task 📅 2026-07-14');
-	});
-
-	it('leaves a task without a due date unchanged', () => {
-		expect(shiftDueDate('- [ ] Task #do', 1)).toBe('- [ ] Task #do');
-	});
-});
-
 describe('setPriority', () => {
 	it('adds a priority in canonical position (before recurrence and dates)', () => {
 		expect(setPriority('- [ ] Task 🔁 every week 📅 2026-07-07', '⏫')).toBe(
@@ -187,5 +158,13 @@ describe('setSize', () => {
 
 	it('leaves non-task lines unchanged', () => {
 		expect(setSize('Just #m text', '#s', SIZE_TAGS)).toBe('Just #m text');
+	});
+});
+
+describe('clearDueDate', () => {
+	it('removes the due date and closes the gap', () => {
+		expect(clearDueDate('- [ ] Task 📅 2026-07-07 #do')).toBe('- [ ] Task #do');
+		expect(clearDueDate('- [ ] Task ⏫ 📅 2026-07-07')).toBe('- [ ] Task ⏫');
+		expect(clearDueDate('- [ ] Task #do')).toBe('- [ ] Task #do');
 	});
 });

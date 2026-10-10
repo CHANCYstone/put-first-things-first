@@ -42,6 +42,8 @@ export class Plugin {
 		this.viewCreators[type] = viewCreator;
 	}
 	registerEvent(_eventRef: unknown) {}
+	register(_cleanup: () => void) {}
+	registerInterval(_id: number) {}
 	// Provided by Obsidian's Component/Plugin base class; no-op unless overridden.
 	onunload() {}
 	lastCodeBlockLang?: string;
@@ -283,10 +285,12 @@ export class TFolder {
 
 export class TFile {
 	path: string;
+	name: string;
 	basename: string;
 	constructor(path: string) {
 		this.path = path;
-		this.basename = path.split('/').pop()?.replace('.md', '') ?? path;
+		this.name = path.split('/').pop() ?? path;
+		this.basename = this.name.replace(/\.md$/, '');
 	}
 }
 
@@ -303,13 +307,17 @@ export class ItemView {
 
 export class MarkdownView {}
 
+export const createdModals: Modal[] = [];
+export function clearCreatedModals(): void { createdModals.length = 0; }
+
 export class Modal {
 	app: unknown;
 	contentEl = new FakeDomEl();
 	titleEl = new FakeDomEl();
-	constructor(app: unknown) { this.app = app; }
-	open() {}
-	close() {}
+	opened = false;
+	constructor(app: unknown) { this.app = app; createdModals.push(this); }
+	open() { this.opened = true; this.onOpen(); }
+	close() { this.opened = false; this.onClose(); }
 	onOpen() {}
 	onClose() {}
 }
@@ -326,6 +334,11 @@ export class Notice {
 }
 
 export function setIcon(_el: HTMLElement, _icon: string): void {}
+
+/** Obsidian's path normaliser: forward slashes, no duplicate or edge slashes. */
+export function normalizePath(path: string): string {
+	return path.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/|\/$/g, '');
+}
 
 // Minimal Menu stub. Instances register in `createdMenus` so tests can find the
 // menu opened by a click, inspect its items, and invoke their onClick handlers.
@@ -357,7 +370,7 @@ export class Menu {
 export const Platform = { isMobile: false };
 
 export function debounce<T extends (...args: never[]) => void>(fn: T, _wait: number, _resetTimer?: boolean): T {
-	return fn;
+	return Object.assign(fn, { cancel: () => {} });
 }
 
 export function moment(date?: Date) {

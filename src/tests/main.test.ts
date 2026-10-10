@@ -10,6 +10,13 @@ const { TriageView } = await import('../TriageView');
 const { FocusDataBlock } = await import('../focusDataBlock');
 const { WrappedTasksBlock } = await import('../wrappedTasksBlock');
 
+// The real Workspace and MetadataCache always register listeners; the stub apps
+// below only carry what each test needs, so `on` is supplied once for all of them.
+const stubOn = () => ({}) as never;
+const stubEvents = { on: stubOn };
+const stubLayout = () => {};
+
+
 // The obsidian mock's Plugin class records the last registered callbacks for
 // inspection (lastViewCreator, lastSettingTab, lastRibbonCb, lastCommand).
 // These don't exist on the real obsidian.Plugin type, so this cast gives test
@@ -30,7 +37,7 @@ function withMockExtras(plugin: InstanceType<typeof FocusFirstPlugin>): MockPlug
 }
 
 function makePluginInstance() {
-	const app = { workspace: { getLeavesOfType: () => [] } };
+	const app = { vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [] } };
 	const manifest = {};
 	// @ts-expect-error — stub app/manifest, not real Obsidian types
 	const plugin = new FocusFirstPlugin(app, manifest);
@@ -81,11 +88,11 @@ describe('FocusFirstPlugin — activateView', () => {
 	it('reveals an existing leaf instead of creating a new one', async () => {
 		const existingLeaf = { id: 'existing' };
 		const revealLeaf = vi.fn();
-		const getRightLeaf = vi.fn();
+		const getLeaf = vi.fn();
 		const app = {
-			workspace: {
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout,
 				getLeavesOfType: () => [existingLeaf],
-				getRightLeaf,
+				getLeaf,
 				revealLeaf,
 			},
 		};
@@ -95,17 +102,17 @@ describe('FocusFirstPlugin — activateView', () => {
 
 		await plugin.activateView();
 
-		expect(getRightLeaf).not.toHaveBeenCalled();
+		expect(getLeaf).not.toHaveBeenCalled();
 		expect(revealLeaf).toHaveBeenCalledWith(existingLeaf);
 	});
 
-	it('creates a new right leaf and sets its view state when none exists', async () => {
+	it('creates a new main-area tab and sets its view state when none exists', async () => {
 		const newLeaf = { setViewState: vi.fn(async () => {}) };
 		const revealLeaf = vi.fn();
 		const app = {
-			workspace: {
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout,
 				getLeavesOfType: () => [],
-				getRightLeaf: () => newLeaf,
+				getLeaf: () => newLeaf,
 				revealLeaf,
 			},
 		};
@@ -122,9 +129,9 @@ describe('FocusFirstPlugin — activateView', () => {
 	it('does nothing when no leaf can be obtained', async () => {
 		const revealLeaf = vi.fn();
 		const app = {
-			workspace: {
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout,
 				getLeavesOfType: () => [],
-				getRightLeaf: () => null,
+				getLeaf: () => null,
 				revealLeaf,
 			},
 		};
@@ -143,11 +150,11 @@ describe('FocusFirstPlugin — activateTriageView', () => {
 	it('reveals an existing triage leaf instead of creating one', async () => {
 		const existingLeaf = { id: 'triage' };
 		const revealLeaf = vi.fn();
-		const getRightLeaf = vi.fn();
+		const getLeaf = vi.fn();
 		const app = {
-			workspace: {
-				getLeavesOfType: (type: string) => (type === 'focus-first-triage-view' ? [existingLeaf] : []),
-				getRightLeaf,
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout,
+				getLeavesOfType: (type: string) => (type === 'put-first-things-first-triage-view' ? [existingLeaf] : []),
+				getLeaf,
 				revealLeaf,
 			},
 		};
@@ -157,17 +164,17 @@ describe('FocusFirstPlugin — activateTriageView', () => {
 
 		await plugin.activateTriageView();
 
-		expect(getRightLeaf).not.toHaveBeenCalled();
+		expect(getLeaf).not.toHaveBeenCalled();
 		expect(revealLeaf).toHaveBeenCalledWith(existingLeaf);
 	});
 
-	it('creates a new right leaf with the triage view type when none exists', async () => {
+	it('creates a new main-area tab with the triage view type when none exists', async () => {
 		const newLeaf = { setViewState: vi.fn(async () => {}) };
 		const revealLeaf = vi.fn();
 		const app = {
-			workspace: {
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout,
 				getLeavesOfType: () => [],
-				getRightLeaf: () => newLeaf,
+				getLeaf: () => newLeaf,
 				revealLeaf,
 			},
 		};
@@ -177,14 +184,14 @@ describe('FocusFirstPlugin — activateTriageView', () => {
 
 		await plugin.activateTriageView();
 
-		expect(newLeaf.setViewState).toHaveBeenCalledWith({ type: 'focus-first-triage-view', active: true });
+		expect(newLeaf.setViewState).toHaveBeenCalledWith({ type: 'put-first-things-first-triage-view', active: true });
 		expect(revealLeaf).toHaveBeenCalledWith(newLeaf);
 	});
 
 	it('does nothing when no leaf can be obtained', async () => {
 		const revealLeaf = vi.fn();
 		const app = {
-			workspace: { getLeavesOfType: () => [], getRightLeaf: () => null, revealLeaf },
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [], getLeaf: () => null, revealLeaf },
 		};
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
@@ -197,7 +204,7 @@ describe('FocusFirstPlugin — activateTriageView', () => {
 		const revealLeaf = vi.fn();
 		const newLeaf = { setViewState: vi.fn(async () => {}) };
 		const app = {
-			workspace: { getLeavesOfType: () => [], getRightLeaf: () => newLeaf, revealLeaf },
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [], getLeaf: () => newLeaf, revealLeaf },
 		};
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
@@ -216,7 +223,7 @@ describe('FocusFirstPlugin — activateTriageView', () => {
 
 describe('FocusFirstPlugin — applyFontSize', () => {
 	it('sets the CSS scale variable on every Focus First view leaf', () => {
-		const app = { workspace: { getLeavesOfType: () => [] } };
+		const app = { vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [] } };
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
 		plugin.settings = { ...DEFAULT_SETTINGS, fontSize: 130 };
@@ -234,7 +241,7 @@ describe('FocusFirstPlugin — applyFontSize', () => {
 	});
 
 	it('ignores leaves whose view is not a FocusFirstView', () => {
-		const app = { workspace: { getLeavesOfType: () => [{ view: {} }] } };
+		const app = { vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [{ view: {} }] } };
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
 		plugin.settings = { ...DEFAULT_SETTINGS };
@@ -250,40 +257,41 @@ describe('FocusFirstPlugin — applyFontSize', () => {
 describe('FocusFirstPlugin — onload', () => {
 	it('loads settings, registers the view, and applies font size without throwing', async () => {
 		const app = {
-			workspace: { getLeavesOfType: () => [] },
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [] },
 		};
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
 
 		await expect(plugin.onload()).resolves.toBeUndefined();
-		expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
+		expect(plugin.settings).toMatchObject(DEFAULT_SETTINGS);
+		expect(plugin.settings.dailyLogStartDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 	});
 
 	it('registers a view creator that builds a FocusFirstView', async () => {
-		const app = { workspace: { getLeavesOfType: () => [] } };
+		const app = { vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [] } };
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
 		await plugin.onload();
 
 		const extras = withMockExtras(plugin);
-		const creator = extras.viewCreators?.['focus-first-view'];
+		const creator = extras.viewCreators?.['put-first-things-first-view'];
 		expect(creator).toBeTypeOf('function');
 		expect(creator?.({ app })).toBeInstanceOf(FocusFirstView);
 	});
 
 	it('registers a view creator that builds a TriageView', async () => {
-		const app = { workspace: { getLeavesOfType: () => [] } };
+		const app = { vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [] } };
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
 		await plugin.onload();
 
-		const creator = withMockExtras(plugin).viewCreators?.['focus-first-triage-view'];
+		const creator = withMockExtras(plugin).viewCreators?.['put-first-things-first-triage-view'];
 		expect(creator).toBeTypeOf('function');
 		expect(creator?.({ app })).toBeInstanceOf(TriageView);
 	});
 
 	it('registers a settings tab', async () => {
-		const app = { workspace: { getLeavesOfType: () => [] } };
+		const app = { vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [] } };
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
 		await plugin.onload();
@@ -291,11 +299,12 @@ describe('FocusFirstPlugin — onload', () => {
 		expect(withMockExtras(plugin).lastSettingTab).toBeDefined();
 	});
 
-	it('the ribbon icon callback activates the view', async () => {
+	it('the ribbon icon callback opens daily planning by default', async () => {
 		const revealLeaf = vi.fn();
+		const getLeavesOfType = vi.fn(() => [{ id: 'existing' }]);
 		const app = {
-			workspace: {
-				getLeavesOfType: () => [{ id: 'existing' }],
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout,
+				getLeavesOfType,
 				revealLeaf,
 			},
 		};
@@ -306,12 +315,13 @@ describe('FocusFirstPlugin — onload', () => {
 		await withMockExtras(plugin).lastRibbonCb?.();
 
 		expect(revealLeaf).toHaveBeenCalled();
+		expect(getLeavesOfType).toHaveBeenCalledWith('pftf-daily-planning');
 	});
 
 	it('registers the "open-view" command whose callback activates the view', async () => {
 		const revealLeaf = vi.fn();
 		const app = {
-			workspace: {
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout,
 				getLeavesOfType: () => [{ id: 'existing' }],
 				revealLeaf,
 			},
@@ -328,7 +338,7 @@ describe('FocusFirstPlugin — onload', () => {
 	});
 
 	it('registers the "add-task" command whose callback opens the quick-add dialog', async () => {
-		const app = { workspace: { getLeavesOfType: () => [] } };
+		const app = { vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [] } };
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
 		await plugin.onload();
@@ -348,7 +358,7 @@ describe('FocusFirstPlugin — onload', () => {
 
 describe('FocusFirstPlugin — focus-first-tasks code block', () => {
 	async function loadedPlugin() {
-		const app = { workspace: { getLeavesOfType: () => [] } };
+		const app = { vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [] } };
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
 		await plugin.onload();
@@ -396,7 +406,7 @@ describe('FocusFirstPlugin — focus-first-tasks code block', () => {
 
 describe('FocusFirstPlugin — onunload', () => {
 	it('does not throw', () => {
-		const app = { workspace: { getLeavesOfType: () => [] } };
+		const app = { vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout, getLeavesOfType: () => [] } };
 		// @ts-expect-error — stub app/manifest, not real Obsidian types
 		const plugin = new FocusFirstPlugin(app, {});
 		expect(() => plugin.onunload()).not.toThrow();
@@ -409,7 +419,7 @@ describe('FocusFirstPlugin — onunload', () => {
 
 describe('FocusFirstPlugin — quick add', () => {
 	async function flush() {
-		for (let i = 0; i < 8; i++) await Promise.resolve();
+		for (let i = 0; i < 30; i++) await Promise.resolve();
 	}
 
 	function makeApp(opts: {
@@ -425,7 +435,7 @@ describe('FocusFirstPlugin — quick add', () => {
 			store,
 			app: {
 				plugins,
-				workspace: {
+				metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout,
 					getActiveFile: () => (opts.activePath ? { path: opts.activePath } : null),
 					getLeavesOfType: () => [],
 				},
@@ -481,15 +491,103 @@ describe('FocusFirstPlugin — quick add', () => {
 		const triageView = Object.create(TriageView.prototype) as { refresh: () => Promise<void> };
 		triageView.refresh = () => { refreshed.push(triageView); return Promise.resolve(); };
 		const app = {
-			workspace: {
+			vault: { on: stubOn }, metadataCache: stubEvents, workspace: { on: stubOn, onLayoutReady: stubLayout,
 				getLeavesOfType: (type: string) =>
-					type === 'focus-first-view' ? [{ view: focusView }, { view: {} }]
-						: type === 'focus-first-triage-view' ? [{ view: triageView }]
+					type === 'put-first-things-first-view' ? [{ view: focusView }, { view: {} }]
+						: type === 'put-first-things-first-triage-view' ? [{ view: triageView }]
 							: [],
 			},
 		};
 		const plugin = makePlugin(app);
 		plugin.refreshViews();
 		expect(refreshed).toEqual([focusView, triageView]);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Calendar plugin integration
+// ---------------------------------------------------------------------------
+
+describe('FocusFirstPlugin — Calendar plugin integration', () => {
+	/** A stub app that records the listeners onload registers, plus a Calendar view. */
+	function makeCalendarApp() {
+		const handlers = new Map<string, (...args: never[]) => unknown>();
+		const view = {
+			calendar: { tick: vi.fn() },
+			contentEl: { style: { setProperty: vi.fn() } },
+			onOpen: vi.fn(() => Promise.resolve()),
+			onClose: vi.fn(() => Promise.resolve()),
+		};
+		let calendarOpen = false;
+		return {
+			handlers,
+			view,
+			openCalendar: () => { calendarOpen = true; },
+			app: {
+				workspace: {
+					onLayoutReady: stubLayout,
+					on: (name: string, cb: (...args: never[]) => unknown) => { handlers.set(name, cb); return { name }; },
+					getLeavesOfType: (type: string) =>
+						(type === 'calendar' && calendarOpen ? [{ view }] : []),
+				},
+				metadataCache: {
+					on: (name: string, cb: (...args: never[]) => unknown) => { handlers.set(`meta:${name}`, cb); return { name }; },
+					getFileCache: () => null,
+				},
+				vault: { on: stubOn, getMarkdownFiles: () => [] },
+			},
+		};
+	}
+
+	it('hands Calendar a working source, which answers from the matrix', async () => {
+		const { app, handlers } = makeCalendarApp();
+		// @ts-expect-error — stub app/manifest, not real Obsidian types
+		const plugin = new FocusFirstPlugin(app, {});
+		await plugin.onload();
+
+		const sources: { getDailyMetadata(d: { format(): string }): Promise<unknown> }[] = [];
+		handlers.get('calendar:open')?.(sources as never);
+
+		expect(sources).toHaveLength(1);
+		await expect(sources[0]?.getDailyMetadata({ format: () => '2026-09-20' })).resolves.toEqual({
+			classes: [], dataAttributes: {}, dots: [],
+		});
+	});
+
+	it('paints the configured quadrant colours onto an open Calendar view', async () => {
+		const { app, handlers, view, openCalendar } = makeCalendarApp();
+		// @ts-expect-error — stub app/manifest, not real Obsidian types
+		const plugin = new FocusFirstPlugin(app, {});
+		await plugin.onload();
+		plugin.settings.quadrants.do.color = '#123456';
+		openCalendar();
+
+		handlers.get('calendar:open')?.([] as never);
+
+		expect(view.contentEl.style.setProperty).toHaveBeenCalledWith('--ff-quadrant-do', '#123456');
+	});
+
+	it('redraws Calendar when a note changes, which Calendar itself would not notice', async () => {
+		const { app, handlers, view, openCalendar } = makeCalendarApp();
+		// @ts-expect-error — stub app/manifest, not real Obsidian types
+		const plugin = new FocusFirstPlugin(app, {});
+		await plugin.onload();
+		openCalendar();
+
+		handlers.get('meta:changed')?.();
+
+		expect(view.calendar.tick).toHaveBeenCalled();
+	});
+
+	it('refreshViews reaches the calendar too', async () => {
+		const { app, view, openCalendar } = makeCalendarApp();
+		// @ts-expect-error — stub app/manifest, not real Obsidian types
+		const plugin = new FocusFirstPlugin(app, {});
+		await plugin.onload();
+		openCalendar();
+
+		plugin.refreshViews();
+
+		expect(view.calendar.tick).toHaveBeenCalled();
 	});
 });

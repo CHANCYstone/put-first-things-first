@@ -7,6 +7,8 @@ import { t } from './i18n';
  * the caller can offer a one-click undo.
  */
 export interface EditSnapshot {
+	/** Domain edits may need capacity or concurrency checks when reverted. */
+	undo?: () => Promise<void>;
 	filePath: string;
 	startLine: number;
 	before: string[];
@@ -19,6 +21,7 @@ export interface EditSnapshot {
  * note that has since moved on is left untouched.
  */
 export async function applyUndoSnapshot(app: App, snap: EditSnapshot): Promise<void> {
+	if (snap.undo) { await snap.undo(); return; }
 	const file = app.vault.getAbstractFileByPath(snap.filePath);
 	if (!(file instanceof TFile)) return;
 	const content = await app.vault.read(file);
@@ -39,7 +42,7 @@ export function showUndoNotice(app: App, label: string, snap: EditSnapshot | und
 	const undo = el.createEl('a', { text: String(t().view.undo), cls: 'focus-first-undo' });
 	undo.addEventListener('click', (e) => {
 		(e as Event).preventDefault();
-		void applyUndoSnapshot(app, snap);
+		void applyUndoSnapshot(app, snap).catch((error: Error) => { new Notice(error.message); });
 		notice.hide();
 	});
 }

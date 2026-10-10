@@ -1,13 +1,10 @@
 {
-	"id": "focus-first",
-	"name": "Focus First",
-	"version": "1.6.13",
+	"id": "put-first-things-first",
+	"name": "Put First Things First",
+	"version": "0.7.0",
 	"minAppVersion": "1.12.0",
-	"description": "Automatically sorts your existing tasks into an Eisenhower or Value/Effort matrix by due date, priority, and size. Pin a task when context beats the rule, with one click back to automatic.",
-	"author": "Christian Luger",
-	"authorUrl": "https://github.com/christian-luger-at",
-	"fundingUrl": {
-		"Buy Me a Coffee": "https://buymeacoffee.com/christianlugerat"
-	},
+	"description": "Plan priorities with a Focus board, daily actions, progress notes, and local daily logs.",
+	"author": "Chancy",
+	"authorUrl": "https://github.com/CHANCYstone",
 	"isDesktopOnly": false
 }

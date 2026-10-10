@@ -1,15 +1,23 @@
-import { App, TFile, MarkdownView, Menu, setIcon, Platform } from 'obsidian';
+import { moveBoardTask } from './workBoard';
+import { App, TFile, Menu, setIcon, Platform, Notice } from 'obsidian';
 import { MatrixTask, ClassificationReason, explainTask } from './matrixClassifier';
-import { TaskItem, isFutureTask } from './taskScanner';
+import { TaskItem } from './taskScanner';
 import { FocusFirstSettings, Priority, TaskSize, sizeTagList } from './settings';
 import { getTasksApi } from './tasksPlugin';
-import { setDueDate, shiftDueDate, setPriority, setStartDate, addDaysToIso, setSize, TASK_PREFIX_RE } from './tasksFormat';
+import { setDueDate, clearDueDate, setPriority, addDaysToIso, setSize, taskTitle } from './tasksFormat';
+import { DueDateModal } from './dueDateModal';
 import { EditSnapshot, showUndoNotice } from './undo';
+import { formatIsoDate } from './dateUtils';
+import { openFile, openFileAtLine } from './noteNavigation';
+import { latestEntry } from './progressLog';
+import { ProgressModal, isStale, lastNoteText } from './progressModal';
 import { t } from './i18n';
+
+export { taskTitle } from './tasksFormat';
 
 /** Runs a mutating action and, if it changed anything, shows an undo toast (#32). */
 function undoable(app: App, label: string, edit: Promise<EditSnapshot | undefined>): void {
-	void edit.then((snap) => showUndoNotice(app, label, snap));
+	void edit.then((snap) => showUndoNotice(app, label, snap)).catch((error: Error) => { new Notice(error.message); });
 }
 
 /**
@@ -46,17 +54,9 @@ export function makeTaskDraggable(li: HTMLElement, task: MatrixTask): void {
 	});
 }
 
+/** Opens the task's note with the cursor on its line. */
 export async function openTaskFile(app: App, task: TaskItem): Promise<void> {
-	const leaf = app.workspace.getLeaf(false);
-	await leaf.openFile(task.file);
-	const view = leaf.view;
-	if (view instanceof MarkdownView) {
-		view.editor.setCursor({ line: task.lineNumber, ch: 0 });
-		view.editor.scrollIntoView(
-			{ from: { line: task.lineNumber, ch: 0 }, to: { line: task.lineNumber, ch: 0 } },
-			true,
-		);
-	}
+	await openFileAtLine(app, task.file, task.lineNumber);
 }
 
 /**
@@ -73,23 +73,10 @@ export function removeTagFromLine(line: string, tag: string): string {
 // canonical order (start, scheduled, due, cancelled, done).
 const DATE_SIGNIFIER_RE = /[🛫⏳📅❌✅]/u;
 
-function formatDate(date: Date): string {
-	const y = date.getFullYear();
-	const m = String(date.getMonth() + 1).padStart(2, '0');
-	const d = String(date.getDate()).padStart(2, '0');
-	return `${y}-${m}-${d}`;
-}
-
 /** Appends `tag` to a line unless it's already present (case-insensitive). */
 function addTagToLine(line: string, tag: string): string {
 	const has = line.split(/\s+/).some((token) => token.toLowerCase() === tag.toLowerCase());
 	return has ? line : `${line.replace(/[ \t]+$/, '')} ${tag}`;
-}
-
-/** ISO date of the next Monday after `from` (a week away when `from` is Monday). */
-function nextMondayIso(from: Date): string {
-	const daysUntilMonday = ((8 - from.getDay()) % 7) || 7;
-	return addDaysToIso(formatDate(from), daysUntilMonday);
 }
 
 /**
@@ -139,7 +126,7 @@ export async function completeTaskLine(
 		if (raw.trim() === '') {
 			after = [flip()];
 		} else {
-			const today = formatDate(now);
+			const today = formatIsoDate(now);
 			// The newly generated next occurrence is the still-open `[ ]` line; give
 			// it a created date like the Tasks plugin does. The completed line stays.
 			after = raw.split('\n').map((l) => (/^\s*[-*+] \[ \]/.test(l) ? withCreatedDate(l, today) : l));
@@ -190,54 +177,26 @@ export async function toggleFocusTagLine(
 ): Promise<EditSnapshot | undefined> {
 	const file = app.vault.getAbstractFileByPath(filePath);
 	if (!(file instanceof TFile)) return;
-	const content = await app.vault.read(file);
-	const lines = content.split('\n');
-	const line = lines[lineNumber];
-	if (line === undefined) return;
-	// Stale-line guard (#27): the note may have shifted since the view was
-	// scanned, in which case this line is a different task than the one clicked.
-	if (expectedLine !== undefined && line !== expectedLine) return;
-	// addTagToLine guards against appending a tag the line already carries.
-	const next = add
-		? addTagToLine(line, settings.focusTag.trim())
-		: removeTagFromLine(line, focusTag);
-	if (next === line) return;
-	lines[lineNumber] = next;
-	await app.vault.modify(file, lines.join('\n'));
-	return { filePath, startLine: lineNumber, before: [line], after: [next] };
+	const line = (await app.vault.read(file)).split('\n')[lineNumber];
+	if (line === undefined || (expectedLine !== undefined && line !== expectedLine)) return;
+	return moveBoardTask(app, settings, { file, lineNumber, line }, add ? 'focus' : 'work');
 }
 
 /**
- * Strips a raw task line down to its display title: removes the checkbox marker,
- * priority signifiers, dated signifiers, and tags. Used both for rendering and
- * as the stable per-task key for the manual focus order (file path + title).
- */
-export function taskTitle(line: string): string {
-	return line
-		.replace(TASK_PREFIX_RE, '')
-		.replace(/(🔺|⏫|🔼|🔽|⏬)\s*/g, '')
-		// Strip all date signifiers (due, start, scheduled, created, cancelled,
-		// done) with their dates so the title stays clean — they show in the popover.
-		.replace(/[📅🛫⏳➕❌✅]\s*\d{4}-\d{2}-\d{2}/gu, '')
-		.replace(/#\S+/g, '')
-		.replace(/\s{2,}/g, ' ')
-		.trim();
-}
-
-/**
- * Renders one interactive task row. The list shows only titles (each a link that
- * opens the note on a single click); hovering a row reveals a floating popover
- * with its metadata and actions, which disappears when the pointer leaves — so
- * the list stays clean and never reflows. Identical markup for the matrix, the
- * focus section, and the embedded code block. Returns the created <li> so callers
- * can wire extra behaviour (e.g. the focus reorder drop target).
+ * Renders one interactive task row: the title (a click opens the task's page
+ * with its progress log) and, when the task has a log, its latest entry on a
+ * second line. Hovering a row reveals a floating popover with its metadata and
+ * actions, which disappears when the pointer leaves — so the list stays calm
+ * and never reflows. Identical markup for the matrix, the focus section, and
+ * the embedded code block. Returns the created <li> so callers can wire extra
+ * behaviour (e.g. the focus reorder drop target).
  */
 export function renderTaskItem(
 	parent: HTMLElement,
 	task: MatrixTask,
 	app: App,
 	settings: FocusFirstSettings,
-	opts: { suppressWhyHere?: boolean; position?: number } = {},
+	opts: { suppressWhyHere?: boolean; position?: number; boardMode?: boolean; onToggleFocus?: () => void } = {},
 ): HTMLElement {
 	const focusTag = settings.focusTag.trim().toLowerCase();
 	const isFocused = focusTag
@@ -247,10 +206,8 @@ export function renderTaskItem(
 	// here" row, so they can never drift out of sync (#66).
 	const reason = explainTask(task, settings);
 	const hideTag = settings.hideTag.trim().toLowerCase();
-	// "Future" tasks (start/scheduled date ahead) are dimmed when that mode is on.
-	const isFuture = settings.futureTasks === 'dim' && isFutureTask(task);
 	const li = parent.createEl('li', {
-		cls: `focus-first-task-item${isFocused ? ' is-focused' : ''}${isFuture ? ' is-future' : ''}`,
+		cls: `focus-first-task-item${isFocused ? ' is-focused' : ''}`,
 	});
 	makeTaskDraggable(li, task);
 
@@ -261,17 +218,32 @@ export function renderTaskItem(
 		li.createSpan({ text: `${opts.position}.`, cls: 'focus-first-task-position' });
 	}
 
-	// Title — a link: a single click opens the note, like any other link. The list
-	// is just titles; the detail popover opens on row hover (desktop) or on tap
-	// (mobile, see below). stopPropagation so the title tap opens the note without
-	// also toggling the mobile expand.
+	// The project title opens its detailed note; Progress stays one click away.
+	const openProgress = (e: Event) => { e.stopPropagation(); new ProgressModal(app, task, settings).open(); };
+	const openPage = (e: Event) => {
+		e.stopPropagation();
+		if (task.homeNote) void openFile(app, task.homeNote);
+		else new ProgressModal(app, task, settings).open();
+	};
+	if (!Platform.isMobile) li.addEventListener('click', openPage);
 	const titleEl = li.createSpan({ text, cls: 'focus-first-task-text' });
-	titleEl.addEventListener('click', (e) => { e.stopPropagation(); void openTaskFile(app, task); });
+	titleEl.addEventListener('click', openPage);
+
+	// A task with a home note shows a small link to it: one click opens the note
+	// itself. The note is where its relations
+	// live, so it deserves a direct door.
+	const home = task.homeNote;
+	if (home) {
+		const homeEl = li.createSpan({ cls: 'focus-first-task-home' });
+		setIcon(homeEl, 'file-text');
+		homeEl.setAttribute('aria-label', String(t().progress.openHome).replace('{name}', home.basename));
+		homeEl.addEventListener('click', (e) => { e.stopPropagation(); void openFile(app, home); });
+	}
 
 	// A manual quadrant tag pins the task, always visible (not just on hover) so
 	// the override is never a surprise (#66). The "why" text is reused as the
 	// tooltip, so the explanation can't drift from the one in the detail popover.
-	if (reason.override) {
+	if (reason.override && !opts.boardMode) {
 		const pinEl = li.createSpan({ cls: 'focus-first-pin-badge' });
 		setIcon(pinEl, 'pin');
 		pinEl.setAttribute('aria-label', classificationReasonText(reason, settings));
@@ -285,14 +257,23 @@ export function renderTaskItem(
 		li.addEventListener('click', () => { li.classList.toggle('is-expanded'); });
 	}
 
-	// Detail popover — the task metadata as aligned label/value rows (so it's calm
-	// and easy to scan) plus the actions. The title isn't repeated here (it's right
-	// there in the list). Hidden until the row is hovered; showTaskDetail floats it
-	// next to the row.
-	const detail = li.createDiv({ cls: 'focus-first-task-detail' });
+	// The actions sit on the card itself, at the right end of the title row —
+	// faint until the pointer is over the card, so the matrix stays calm but
+	// nothing has to be hunted for in a popover. On mobile, where there is no
+	// hover, they stay inside the tap-to-expand details below.
+	const progressBtn = li.createEl('button', { text: 'Progress', cls: 'pftf-card-progress', attr: { 'aria-label': `记录 ${text} 的计划或进展` } });
+	progressBtn.addEventListener('click', openProgress);
+	const cardActions = Platform.isMobile ? undefined : li.createDiv({ cls: 'focus-first-task-actions' });
 
-	// Actions come first (top row), the metadata grid below.
-	const actions = detail.createDiv({ cls: 'focus-first-task-actions' });
+
+	renderLatestNote(li, task, settings)?.addEventListener('click', openProgress);
+
+	// Detail popover — the task metadata as aligned label/value rows (so it's calm
+	// and easy to scan). The title isn't repeated here (it's right there in the
+	// list). Hidden until the row is hovered; showTaskDetail floats it next to
+	// the row.
+	const detail = li.createDiv({ cls: 'focus-first-task-detail' });
+	const actions = cardActions ?? detail.createDiv({ cls: 'focus-first-task-actions' });
 
 	const meta = detail.createDiv({ cls: 'focus-first-task-meta' });
 	const labels = t().view.detail;
@@ -322,14 +303,6 @@ export function renderTaskItem(
 		const due = task.dueDate;
 		addRow(String(labels.due), (v) => { v.setText(due.toLocaleDateString()); v.addClass('focus-first-task-due'); });
 	}
-	if (task.startDate) {
-		const start = task.startDate;
-		addRow(String(labels.start), (v) => v.setText(start.toLocaleDateString()));
-	}
-	if (task.scheduledDate) {
-		const scheduled = task.scheduledDate;
-		addRow(String(labels.scheduled), (v) => v.setText(scheduled.toLocaleDateString()));
-	}
 	if (task.tags.length > 0) {
 		addRow(String(labels.tags), (v) => {
 			v.addClass('focus-first-task-tags');
@@ -338,13 +311,13 @@ export function renderTaskItem(
 	}
 	addRow(String(labels.note), (v) => { v.setText(task.file.basename); v.addClass('focus-first-task-source'); });
 
-	const focusRun = focusTag
+	const focusRun = opts.onToggleFocus ?? (focusTag
 		? () => undoable(
 			app,
 			String(isFocused ? t().view.undoLabels.unfocused : t().view.undoLabels.focused),
 			toggleFocusTagLine(app, settings, task.file.path, task.lineNumber, focusTag, !isFocused, task.line),
 		)
-		: null;
+		: null);
 
 	const doneBtn = actionButton(actions, 'check', String(t().view.focusDone), 'focus-first-done-btn');
 	doneBtn.addEventListener('click', (e) => {
@@ -359,7 +332,7 @@ export function renderTaskItem(
 			`focus-first-focus-btn${isFocused ? ' is-active' : ''}`);
 		focusBtn.addEventListener('click', (e) => { e.stopPropagation(); focusRun(); });
 	}
-	if (reason.override) {
+	if (reason.override && !opts.boardMode) {
 		const tag = settings.quadrants[reason.override].tag.trim();
 		const unpinBtn = actionButton(actions, 'pin-off', String(t().view.unpinTask), 'focus-first-unpin-btn');
 		unpinBtn.addEventListener('click', (e) => {
@@ -368,40 +341,52 @@ export function renderTaskItem(
 				updateTaskLine(app, task.file.path, task.lineNumber, (line) => removeTagFromLine(line, tag), task.line));
 		});
 	}
-	if (hideTag) {
-		const hideBtn = actionButton(actions, 'eye-off', String(t().view.hideTask), 'focus-first-hide-btn');
-		hideBtn.addEventListener('click', (e) => {
+	if (!opts.boardMode) {
+		const postponeBtn = actionButton(actions, 'calendar-clock', String(t().view.actions.postpone), 'focus-first-postpone-btn');
+		postponeBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			const menu = new Menu();
-			buildHideMenu(menu, task, app, settings);
+			buildPostponeMenu(menu, task, app);
 			menu.showAtMouseEvent(e);
 		});
-	}
 
-	const postponeBtn = actionButton(actions, 'calendar-clock', String(t().view.actions.postpone), 'focus-first-postpone-btn');
-	postponeBtn.addEventListener('click', (e) => {
-		e.stopPropagation();
-		const menu = new Menu();
-		buildPostponeMenu(menu, task, app);
-		menu.showAtMouseEvent(e);
-	});
-
-	const priorityBtn = actionButton(actions, 'flag', String(t().view.actions.priority), 'focus-first-priority-btn');
-	priorityBtn.addEventListener('click', (e) => {
-		e.stopPropagation();
-		const menu = new Menu();
-		buildPriorityMenu(menu, task, app);
-		menu.showAtMouseEvent(e);
-	});
-
-	// Size is only offered when the user has configured size tags (they can be
-	// blanked out to opt out entirely).
-	if (sizeTagList(settings).length > 0) {
-		const sizeBtn = actionButton(actions, 'ruler', String(t().view.actions.size), 'focus-first-size-btn');
-		sizeBtn.addEventListener('click', (e) => {
+		const priorityBtn = actionButton(actions, 'flag', String(t().view.actions.priority), 'focus-first-priority-btn');
+		priorityBtn.addEventListener('click', (e) => {
 			e.stopPropagation();
 			const menu = new Menu();
-			buildSizeMenu(menu, task, app, settings);
+			buildPriorityMenu(menu, task, app);
+			menu.showAtMouseEvent(e);
+		});
+
+		const openBtn = actionButton(actions, 'file-text', String(t().view.actions.openNote), 'focus-first-open-btn');
+		openBtn.addEventListener('click', (e) => { e.stopPropagation(); void openTaskFile(app, task); });
+	}
+
+	// Board cards keep the direct actions compact; date, priority and note access
+	// join size and hide in the more menu. Other views keep their existing buttons.
+	const hasSize = sizeTagList(settings).length > 0;
+	if (opts.boardMode || hasSize || hideTag) {
+		const moreBtn = actionButton(actions, 'ellipsis', String(t().view.actions.more), 'focus-first-more-btn');
+		moreBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const menu = new Menu();
+			if (opts.boardMode) {
+				menu.addItem((item) => item.setTitle(String(t().view.actions.openNote)).setIcon('file-text')
+					.onClick(() => { void openTaskFile(app, task); }));
+				menu.addSeparator();
+				buildPostponeMenu(menu, task, app);
+				menu.addSeparator();
+				buildPriorityMenu(menu, task, app);
+				if (hasSize || hideTag) menu.addSeparator();
+			}
+			if (hasSize) buildSizeMenu(menu, task, app, settings);
+			if (hasSize && hideTag) menu.addSeparator();
+			if (hideTag) {
+				const tag = settings.hideTag.trim();
+				menu.addItem((item) => item.setTitle(String(t().view.hideTask)).setIcon('eye-off')
+					.onClick(() => undoable(app, String(t().view.undoLabels.hidden),
+						updateTaskLine(app, task.file.path, task.lineNumber, (line) => addTagToLine(line, tag), task.line))));
+			}
 			menu.showAtMouseEvent(e);
 		});
 	}
@@ -415,6 +400,26 @@ export function renderTaskItem(
 	if (!Platform.isMobile) wireDetailHover(li, detail);
 
 	return li;
+}
+
+/**
+ * The card's second line: the task's most recent log entry, so the matrix reads
+ * like a notebook page — what happened last, at a glance. An alert (⚠) reads
+ * red; an entry older than the stale threshold reads amber. A task without a
+ * log adds nothing, so untouched cards look exactly as they always did.
+ */
+function renderLatestNote(li: HTMLElement, task: TaskItem, settings: FocusFirstSettings): HTMLElement | undefined {
+	const latest = latestEntry(task.progress);
+	if (!latest) return undefined;
+	const cls = ['focus-first-task-latest'];
+	if (latest.alert) cls.push('is-alert');
+	if (isStale(latest, settings.staleDays)) cls.push('is-stale');
+	const row = li.createDiv({ cls: cls.join(' ') });
+	setIcon(row.createSpan({ cls: 'focus-first-task-latest-icon' }), latest.alert ? 'alert-triangle' : 'corner-down-right');
+	if (latest.date) row.createSpan({ text: formatIsoDate(latest.date).slice(5), cls: 'focus-first-task-latest-date' });
+	row.createSpan({ text: latest.text, cls: 'focus-first-task-latest-text' });
+	row.setAttribute('title', lastNoteText(latest));
+	return row;
 }
 
 /**
@@ -523,6 +528,10 @@ function showTaskDetail(li: HTMLElement, detail: HTMLElement, mouseX: number, mo
 	// properties (the one escape hatch the styling rules allow).
 	detail.classList.add('is-open');
 	const rootRect = root.getBoundingClientRect();
+	// The root is the scroll surface, so an absolutely positioned child sits in
+	// its scrolled content box: add the scroll offset to the viewport maths.
+	const scrollX = root.scrollLeft || 0;
+	const scrollY = root.scrollTop || 0;
 	detail.setCssProps({ '--ff-detail-max-width': `${Math.max(rootRect.width - 16, 160)}px` });
 	const width = detail.offsetWidth;
 	const height = detail.offsetHeight;
@@ -531,11 +540,11 @@ function showTaskDetail(li: HTMLElement, detail: HTMLElement, mouseX: number, mo
 	// clamp inside the view.
 	let left = mouseX + gap;
 	if (left + width > rootRect.right) left = mouseX - gap - width;
-	left = Math.max(rootRect.left, Math.min(left, rootRect.right - width)) - rootRect.left;
+	left = Math.max(rootRect.left, Math.min(left, rootRect.right - width)) - rootRect.left + scrollX;
 	// Vertical: start at the cursor, shift up if it would overflow the bottom.
 	let top = mouseY;
 	if (top + height > rootRect.bottom) top = rootRect.bottom - height;
-	top = Math.max(rootRect.top, top) - rootRect.top;
+	top = Math.max(rootRect.top, top) - rootRect.top + scrollY;
 	detail.setCssProps({ '--ff-detail-left': `${left}px`, '--ff-detail-top': `${top}px` });
 }
 
@@ -549,49 +558,34 @@ function actionButton(parent: HTMLElement, icon: string, ariaLabel: string, extr
 	const btn = parent.createEl('button', { cls: `focus-first-task-btn${extraCls ? ` ${extraCls}` : ''}` });
 	setIcon(btn, icon);
 	btn.setAttribute('aria-label', ariaLabel);
+	btn.setAttribute('title', ariaLabel);
 	return btn;
 }
 
 /**
- * Populates a menu with the hide options: hide indefinitely, or "hide until" a
- * date (adds the hide tag plus a future start date 🛫 so the task reappears on
- * its own — issue #23).
+ * Populates the due-date menu: the two quick moves (tomorrow, a week from
+ * today — absolute dates, so a task three weeks overdue lands on tomorrow, not
+ * on three weeks ago plus a day), a date picker for anything else, and, when
+ * the task has a date, the option to drop it.
  */
-function buildHideMenu(menu: Menu, task: MatrixTask, app: App, settings: FocusFirstSettings): void {
-	const a = t().view.actions;
-	const tag = settings.hideTag.trim();
-	const today = formatDate(new Date());
-	const edit = (transform: (line: string) => string) =>
-		undoable(app, String(t().view.undoLabels.hidden),
-			updateTaskLine(app, task.file.path, task.lineNumber, transform, task.line));
-	const hideUntil = (iso: string) => (l: string) => addTagToLine(setStartDate(l, iso), tag);
-	menu.addItem((item) => item.setTitle(String(t().view.hideTask)).setIcon('eye-off')
-		.onClick(() => edit((l) => addTagToLine(l, tag))));
-	menu.addItem((item) => item.setTitle(String(a.hideUntilTomorrow)).setIcon('chevron-right')
-		.onClick(() => edit(hideUntil(addDaysToIso(today, 1)))));
-	menu.addItem((item) => item.setTitle(String(a.hideUntilNextWeek)).setIcon('chevrons-right')
-		.onClick(() => edit(hideUntil(addDaysToIso(today, 7)))));
-	menu.addItem((item) => item.setTitle(String(a.hideUntilMonday)).setIcon('calendar')
-		.onClick(() => edit(hideUntil(nextMondayIso(new Date())))));
-}
-
-/** Populates a menu with the postpone (reschedule) options for a task. */
 function buildPostponeMenu(menu: Menu, task: MatrixTask, app: App): void {
 	const a = t().view.actions;
 	const edit = (transform: (line: string) => string) =>
 		undoable(app, String(t().view.undoLabels.updated),
 			updateTaskLine(app, task.file.path, task.lineNumber, transform, task.line));
+	const today = formatIsoDate(new Date());
+	menu.addItem((item) => item.setTitle(String(a.dueTomorrow)).setIcon('chevron-right')
+		.onClick(() => edit((l) => setDueDate(l, addDaysToIso(today, 1)))));
+	menu.addItem((item) => item.setTitle(String(a.dueNextWeek)).setIcon('chevrons-right')
+		.onClick(() => edit((l) => setDueDate(l, addDaysToIso(today, 7)))));
+	menu.addItem((item) => item.setTitle(String(a.pickDate)).setIcon('calendar')
+		.onClick(() => {
+			const current = task.dueDate ? formatIsoDate(task.dueDate) : undefined;
+			new DueDateModal(app, current, (iso) => edit((l) => setDueDate(l, iso))).open();
+		}));
 	if (task.dueDate) {
-		menu.addItem((item) => item.setTitle(String(a.postponePlusDay)).setIcon('chevron-right')
-			.onClick(() => edit((l) => shiftDueDate(l, 1))));
-		menu.addItem((item) => item.setTitle(String(a.postponePlusWeek)).setIcon('chevrons-right')
-			.onClick(() => edit((l) => shiftDueDate(l, 7))));
-	} else {
-		const today = formatDate(new Date());
-		menu.addItem((item) => item.setTitle(String(a.dueToday)).setIcon('calendar')
-			.onClick(() => edit((l) => setDueDate(l, today))));
-		menu.addItem((item) => item.setTitle(String(a.dueTomorrow)).setIcon('calendar')
-			.onClick(() => edit((l) => setDueDate(l, addDaysToIso(today, 1)))));
+		menu.addItem((item) => item.setTitle(String(a.clearDue)).setIcon('calendar-off')
+			.onClick(() => edit(clearDueDate)));
 	}
 }
 

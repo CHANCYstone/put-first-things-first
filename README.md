@@ -1,82 +1,60 @@
-# Focus First
+# Put First Things First
 
-[![Version](https://img.shields.io/github/manifest-json/v/christian-luger-at/obsidian-focus-first?color=blue&label=version)](https://github.com/christian-luger-at/obsidian-focus-first/releases)
-[![Obsidian minimum version](https://img.shields.io/badge/Obsidian-%E2%89%A5%201.12.0-7c3aed)](https://obsidian.md)
-[![Docs](https://img.shields.io/badge/docs-online-brightgreen)](https://christian-luger-at.github.io/obsidian-focus-first/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Coverage](https://raw.githubusercontent.com/christian-luger-at/obsidian-focus-first/badges/coverage.svg)](https://github.com/christian-luger-at/obsidian-focus-first/actions/workflows/coverage.yml)
-[![GitHub issues](https://img.shields.io/github/issues/christian-luger-at/obsidian-focus-first)](../../issues)
+Put First Things First (PFTF) is a local task board for Obsidian. It keeps a short **Focus** list above three places for other work: **Work**, **Urgent**, and **Delegate**. You can plan a concrete action for a day without marking its longer project complete.
 
-Stop guessing what to work on next. **Focus First** automatically sorts your Obsidian tasks into an **Eisenhower or Value/Effort matrix**, so the next right action is always obvious.
+PFTF is a fork of [Focus First](https://github.com/christian-luger-at/obsidian-focus-first) by Christian Luger. It retains the original task parser, optional integrations, and MIT license while adding the Focus board, daily planning, progress notes, and daily logs.
 
-![Focus First view](docs/public/screens/tour.gif)
+## What it does
 
-It reads standard checkbox tasks from your vault (compatible with the [Tasks plugin](https://obsidian.tasks.org/) format - due dates, priorities, tags) and places each one automatically:
+- Keep one to three tasks in Focus. Move cards between Focus, Work, Urgent, and Delegate by dragging or using the card menu. The board remembers your order.
+- Open a linked project note from a card. Use **Progress** for a short, dated update without leaving the board.
+- Plan independent daily actions or actions linked to a longer task. Completing a daily action records its result; the longer task stays open.
+- Review a two-column daily planning view that places longer tasks beside the selected day's actions. Narrow panes stack the columns.
+- Collect dated progress, thoughts, and completed actions into a Daily Log. Its generated section is updated from source notes; text outside that section is preserved.
+- Optionally use task priorities, due dates, tags, the Tasks plugin, and the Calendar plugin. The older matrix and triage views remain available through commands.
 
-| | Urgent | Not urgent |
-| --- | --- | --- |
-| **Important** | **Do** - handle now | **Schedule** - plan for later |
-| **Not important** | **Delegate** - hand off if possible | **Eliminate** - reconsider or drop |
+## Start using it
 
-No manual sorting needed - pin any task to a quadrant with one click, marked with a visible badge, and reset it just as easily.
+1. Enable **Put First Things First** in **Settings → Community plugins**.
+2. Select the PFTF ribbon icon to open **每日规划** (Daily planning), then select **长期任务** (Long-term tasks) for the Focus board.
+3. Add ordinary Markdown checkbox tasks anywhere in the vault, for example `- [ ] Prepare investment memo`. By default PFTF scans the vault; you can restrict the task folder in settings.
+4. Move up to three tasks into Focus. Select a title to open its project note or quick progress view, and select **Progress** to record a dated update.
+5. Add a daily action from **每日规划**. Link it to a longer task when appropriate, then complete it with an optional result.
 
-> 📖 **Full guides, concepts, and reference: [Focus First documentation](https://christian-luger-at.github.io/obsidian-focus-first/)**
+The default Focus tag is `#focus`. PFTF also reads common Tasks-style due dates and priorities. The Tasks plugin is optional; raw Tasks queries inside a `focus-first-tasks` code block require it.
 
-## Features
+## Files PFTF creates and changes
 
-- **Automatic Eisenhower classification** - tasks sorted by urgency (due date) and importance (priority), with no setup.
-- **Two matrices in one view** - switch between Eisenhower and Value/Effort, or drag a task between quadrants to re-classify it.
-- **Triage view** - a separate list of every task no matrix has judged yet, so nothing gets lost in "Eliminate"; place each with one click from a hover picker.
-- **Focus / today plan** - an ordered, numbered `#focus` shortlist for daily-planning methods like Eat the Frog, Ivy Lee, and MITs.
-- **Task size & quick wins** - tag sizes (`#s`/`#m`/`#l`) and filter the matrix to short tasks.
-- **Details on demand** - hover (desktop) or tap (mobile) a task for its "why here" reason, metadata, and one-click actions, each with a brief Undo.
-- **Capture & embed** - quick-add, hide/snooze, search & filters, and embeddable task lists. Works on desktop and mobile, in English and German.
+- On a new vault, daily actions are stored in `PFTF/Daily Work.md`; Daily Logs are created in `PFTF/Daily Log/YYYY-MM-DD.md`. PFTF creates the Daily Log for the current day after the layout is ready.
+- Existing vaults with `2_Areas/任务与节奏/每日工作.md` or `2_Areas/任务与节奏/Daily Log/` continue using those locations. PFTF does not move or copy them.
+- Adding a linked daily action may add a stable block ID to its parent task line. Progress and completion records are written to the linked project note when one exists, or under the task otherwise.
+- Daily Logs contain a marked generated section and a separate area for your own notes. If an existing file at the target path lacks PFTF's markers, PFTF stops instead of replacing it.
 
-→ See the [full feature overview](https://christian-luger-at.github.io/obsidian-focus-first/guide/introduction#feature-overview) and guides in the documentation.
+PFTF reads local Markdown notes to find checkbox tasks and explicit dated progress. It runs locally and does not send vault data to a network service or include telemetry. The optional Tasks and Calendar integrations use locally installed Obsidian plugins.
 
-## Documentation
+The new planning and logging interface currently uses Chinese labels, with some English terms such as Focus and Progress. The inherited settings, matrix, and triage views retain their existing English and German translations.
 
-The complete guides live at **[christian-luger-at.github.io/obsidian-focus-first](https://christian-luger-at.github.io/obsidian-focus-first/)**:
+## Installation and updates
 
-- [Prioritization methods](https://christian-luger-at.github.io/obsidian-focus-first/methods/) - the *why* behind Eisenhower, Value/Effort, Eat the Frog, Ivy Lee, and MITs
-- [Getting started](https://christian-luger-at.github.io/obsidian-focus-first/guide/getting-started)
-- [How tasks are classified](https://christian-luger-at.github.io/obsidian-focus-first/guide/classification)
-- [The two matrices](https://christian-luger-at.github.io/obsidian-focus-first/guide/matrices)
-- [Triaging unclassified tasks](https://christian-luger-at.github.io/obsidian-focus-first/guide/triage)
-- [Focus, size & filters](https://christian-luger-at.github.io/obsidian-focus-first/guide/focus-size-filters)
-- [Embedding tasks in a note](https://christian-luger-at.github.io/obsidian-focus-first/guide/embedding)
-- [Settings](https://christian-luger-at.github.io/obsidian-focus-first/guide/settings)
+After the community listing is published, install from **Settings → Community plugins** by searching for **Put First Things First**.
 
-## Installing the plugin
+For a manual install, download `main.js`, `manifest.json`, and `styles.css` from a release whose tag matches the version in `manifest.json`. Put them in `<vault>/.obsidian/plugins/put-first-things-first/`, then reload Obsidian and enable the plugin. Do not copy `data.json` between vaults.
 
-### From the Community Plugins browser (once published)
+PFTF declares a minimum Obsidian version of 1.12.0 and supports desktop and mobile. The board also adapts to narrow panes. If you find a device-specific issue, include the Obsidian version and platform in your report.
 
-1. Open **Settings → Community plugins** in Obsidian.
-2. Disable **Safe mode** if needed, then click **Browse**.
-3. Search for "Focus First" and click **Install**, then **Enable**.
+## Development
 
-### Manual installation
+Use Node.js and npm:
 
-1. Download `main.js`, `styles.css`, and `manifest.json` from the [latest release](../../releases).
-2. Copy them into `<YourVault>/.obsidian/plugins/focus-first/`.
-3. Reload Obsidian and enable **Focus First** under **Settings → Community plugins**.
+```sh
+npm ci
+npm run build
+npm run lint
+npm test
+```
 
-## Compatibility
+The build generates `main.js` at the repository root. Release assets are `main.js`, `manifest.json`, and `styles.css`. The generated bundle is excluded from Git and attached to the matching GitHub release.
 
-- Requires Obsidian **1.12.0** or later.
-- Works on desktop and mobile.
-- Works alongside the [Tasks plugin](https://obsidian.tasks.org/) - Focus First reads the same checkbox/due-date/priority syntax but doesn't require it (only the code block's query mode needs the Tasks plugin).
+## Attribution and license
 
-## Support
-
-Found a bug or have a feature request? Please [open an issue](../../issues).
-
-If Focus First helps you, a ⭐ on the repo makes it easier for others to discover - thank you!
-
-## Contributing
-
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to report issues, set up the project, and open a pull request, and [DEVELOPMENT.md](DEVELOPMENT.md) for the local dev/test workflow, the release process, and a **demo-vault generator** (`node scripts/gen-demo-vault.mjs`) that spins up a 400-note product-management vault with 100 varied tasks to try the plugin against.
-
-## License
-
-Focus First is licensed under the [MIT License](LICENSE). © 2026 Christian Luger.
+PFTF is based on [Focus First](https://github.com/christian-luger-at/obsidian-focus-first) by Christian Luger. The original copyright notice is retained in [LICENSE](LICENSE). PFTF is distributed under the MIT license.

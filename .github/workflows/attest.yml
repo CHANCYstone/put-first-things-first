@@ -1,11 +1,8 @@
 name: Attest release build
 
-# Runs after release.sh has created and published the GitHub release. It rebuilds
-# main.js in CI, generates a signed build-provenance attestation for all three
-# release assets (main.js, styles.css, manifest.json), and re-uploads them so what
-# users download matches the attestation. Verify any asset with, e.g.:
-#   gh attestation verify main.js --repo christian-luger-at/obsidian-focus-first
-#   gh attestation verify styles.css --repo christian-luger-at/obsidian-focus-first
+# After a release is published, rebuild the three release assets, attest
+# their provenance, and replace the assets with the CI-built versions.
+# Verify with: gh attestation verify main.js --repo OWNER/REPOSITORY
 #
 # Restored 2026-07-20 after being removed on 2026-07-17: Obsidian's plugin review
 # scanner was rejecting valid attestations because GitHub's attestation API had

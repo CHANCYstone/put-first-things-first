@@ -1,7 +1,7 @@
 {
-	"name": "focus-first",
-	"version": "1.6.13",
-	"description": "Automatically sorts your existing tasks into an Eisenhower or Value/Effort matrix by due date, priority, and size. Pin a task when context beats the rule, with one click back to automatic.",
+	"name": "put-first-things-first",
+	"version": "0.7.0",
+	"description": "A capacity-limited Focus board with work, urgent and delegated projects, progress logs and linked daily actions.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

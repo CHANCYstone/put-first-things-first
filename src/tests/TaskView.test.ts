@@ -36,6 +36,7 @@ function makeMatrixTask(overrides: Partial<MatrixTask> = {}): MatrixTask {
 		lineNumber: 0,
 		completed: false,
 		tags: [],
+		progress: [],
 		quadrant: 'do',
 		manual: false,
 		...overrides,
@@ -45,6 +46,9 @@ function makeMatrixTask(overrides: Partial<MatrixTask> = {}): MatrixTask {
 function makeFakeVault(files: Record<string, string>) {
 	const store = { ...files };
 	return {
+		getMarkdownFiles: () => Object.keys(store).map(path => new TFile(path)),
+		cachedRead: async (file: {path: string}) => store[file.path] ?? '',
+		process: async (file: {path: string}, fn: (value: string) => string) => { store[file.path] = fn(store[file.path]!); },
 		getAbstractFileByPath: (path: string) => (path in store ? new TFile(path) : null),
 		read: vi.fn(async (file: { path: string }) => store[file.path] ?? ''),
 		modify: vi.fn(async (file: { path: string }, content: string) => {
@@ -55,7 +59,7 @@ function makeFakeVault(files: Record<string, string>) {
 }
 
 function makeView(settings: Partial<FocusFirstSettings> = {}, vault?: ReturnType<typeof makeFakeVault>) {
-	const app = { vault: vault ?? makeFakeVault({}) };
+	const app = { vault: vault ?? makeFakeVault({}), metadataCache: { getFirstLinkpathDest: () => null, getFileCache: () => ({ listItems: [] }) } };
 	const leaf = { app };
 	const plugin = { settings: { ...DEFAULT_SETTINGS, ...settings } };
 	// @ts-expect-error — stub leaf/plugin, not real Obsidian types
@@ -81,7 +85,7 @@ function priv(view: unknown): TestableView {
 describe('view metadata', () => {
 	it('exposes the view type, display text, and icon', () => {
 		const { view } = makeView();
-		expect(view.getViewType()).toBe('focus-first-view');
+		expect(view.getViewType()).toBe('put-first-things-first-view');
 		expect(view.getDisplayText()).toBeTruthy();
 		expect(view.getIcon()).toBe('list-checks');
 	});
@@ -156,14 +160,14 @@ describe('toggleFocusTagLine', () => {
 		const vault = makeFakeVault({ 'a.md': '- [ ] Task one #focus' });
 		const { plugin, app } = makeView({ focusTag: '#focus' }, vault);
 		await toggleFocusTagLine(app as never, plugin.settings, 'a.md', 0, '#focus', false);
-		expect(vault._store['a.md']).toBe('- [ ] Task one');
+		expect(vault._store['a.md']).toBe('- [ ] Task one #pftf/work');
 	});
 
 	it('keeps indentation of a nested task when removing the tag', async () => {
 		const vault = makeFakeVault({ 'a.md': '\t- [ ] Nested #focus' });
 		const { plugin, app } = makeView({ focusTag: '#focus' }, vault);
 		await toggleFocusTagLine(app as never, plugin.settings, 'a.md', 0, '#focus', false);
-		expect(vault._store['a.md']).toBe('\t- [ ] Nested');
+		expect(vault._store['a.md']).toBe('\t- [ ] Nested #pftf/work');
 	});
 
 	it('does nothing when the file does not exist', async () => {
@@ -212,12 +216,13 @@ describe('toggleFocusTagLine', () => {
 		const vault = makeFakeVault({ 'a.md': '- [ ] Task one' });
 		const { plugin, app } = makeView({ focusTag: '#focus' }, vault);
 		const snap = await toggleFocusTagLine(app as never, plugin.settings, 'a.md', 0, '#focus', true);
-		expect(snap).toEqual({
+		expect(snap).toMatchObject({
 			filePath: 'a.md',
 			startLine: 0,
 			before: ['- [ ] Task one'],
 			after: ['- [ ] Task one #focus'],
 		});
+		expect(typeof snap?.undo).toBe('function');
 	});
 });
 
